@@ -4,7 +4,7 @@ rem start.bat runs this for you the first time, so you normally never need to op
 cd /d "%~dp0"
 set PY=python
 where py >nul 2>&1 && set PY=py -3
-%PY% -c "import sys; sys.exit(sys.version_info < (3, 11))" >nul 2>&1
+%PY% -c "import sys; sys.exit(sys.version_info < (3, 12))" >nul 2>&1
 if errorlevel 1 goto nopython
 if not exist .venv\Scripts\python.exe (
   echo Creating a private Python environment in .venv ...
@@ -20,7 +20,7 @@ exit /b 0
 
 :nopython
 echo.
-echo Ghostline needs Python 3.11 or newer, and it isn't installed.
+echo Ghostline needs Python 3.12 or newer, and it isn't installed (or is too old).
 where winget >nul 2>&1 || goto manual
 choice /m "Install Python 3.12 now (free, from python.org through winget)"
 if errorlevel 2 goto manual
