@@ -13,6 +13,7 @@ if not exist .venv\Scripts\python.exe (
 echo Installing packages. This takes a couple of minutes, once.
 .venv\Scripts\python.exe -m pip install --disable-pip-version-check -q -r requirements.txt || goto failed
 if not exist data mkdir data
+copy /y requirements.txt .venv\installed-requirements.txt >nul
 echo Setup done.
 if /i not "%1"=="--quiet" pause
 exit /b 0

@@ -73,6 +73,10 @@ It shouldn't. The in-game app samples 20 times a second and writes small files; 
 By default only you can, on your own PC. If you want a public read-only copy, see
 [docs/advanced.md](docs/advanced.md#publish-online).
 
+**How do I update?**
+Download the new version and copy your `data` folder into it (that's where your laps are), or `git pull` if you
+cloned it. `start.bat` installs any new packages by itself.
+
 **How do I uninstall it?**
 Double-click `uninstall.bat`. It removes the in-game app from AC and the autostart entry. Then delete the folder.
 
