@@ -1,0 +1,15 @@
+data/
+*.db
+*.npz
+__pycache__/
+*.pyc
+ac_app/RaceLogger/logs/
+.claude/
+*.json.bak
+CLAUDE.md
+.venv/
+config/site.json
+cloudflared/*.yml
+!cloudflared/*.example.yml
+ai_slop_to_avoid.md
+PLAN.md

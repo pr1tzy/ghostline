@@ -1,0 +1,15 @@
+{
+  "monza": {
+    "name": "Monza",
+    "length": 5793,
+    "corners": [
+      [950, "Rettifilo"],
+      [1650, "Curva Grande"],
+      [2120, "Roggia"],
+      [2540, "Lesmo 1"],
+      [2865, "Lesmo 2"],
+      [3950, "Ascari"],
+      [5190, "Parabolica"]
+    ]
+  }
+}

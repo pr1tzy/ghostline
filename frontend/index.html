@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ghostline</title>
+<meta name="description" content="Sim racing telemetry lab. Every lap against the fastest drivers, corner by corner.">
+<meta name="theme-color" content="#07060d">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Ghostline">
+<meta property="og:url" content="/">
+<meta property="og:title" content="Ghostline: find the lost time">
+<meta property="og:description" content="Sim racing telemetry lab. Every lap against the fastest drivers, corner by corner.">
+<meta property="og:image" content="/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Ghostline logo over a racing line">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Ghostline: find the lost time">
+<meta name="twitter:description" content="Sim racing telemetry lab. Every lap against the fastest drivers, corner by corner.">
+<meta name="twitter:image" content="/img/og.png">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="preload" href="/fonts/Grotesk-Gras.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/Lack-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/Sligoil-MicroBold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="bg" aria-hidden="true"></div>
+<div class="cursor"><div class="cursor-dot"></div><div class="cursor-ring"><span class="cursor-label"></span></div></div>
+<div class="wipe"><div class="wipe-title mega">Ghostline</div></div>
+<header class="nav">
+  <a href="/" class="logo" data-hover aria-label="Ghostline home">
+    <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M45 19A19 19 0 1 0 49 38H33" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-dasharray="2 7" transform="translate(-4 4)" opacity=".55"/><path d="M45 19A19 19 0 1 0 49 38H33" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>GHOSTLINE</span>
+  </a>
+  <nav>
+    <a class="roll" href="/laps" data-hover><span>Laps</span><span>Laps</span></a>
+    <a class="roll" href="/compare" data-hover><span>Compare</span><span>Compare</span></a>
+    <a class="roll" href="/stats" data-hover><span>Stats</span><span>Stats</span></a>
+    <a class="roll" href="/live" data-hover><span>Live</span><span>Live</span></a>
+  </nav>
+  <a class="sig" id="rec" href="/live" data-hover aria-label="Live status"><svg class="sig-ring" aria-hidden="true" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" class="trk"/><circle cx="18" cy="18" r="15" class="prog"/><circle cx="18" cy="18" r="4" class="core"/></svg><span class="sig-txt"><small id="sigk">Status</small><b id="sigv">Offline</b></span></a>
+</header>
+<main id="view"></main>
+<footer class="foot">
+  <div><span class="wide">Ghostline</span><span class="mono">Sim racing telemetry lab</span><span class="mono note">No cookies, no tracking. Other drivers shown by initials.</span></div>
+  <nav class="mono"><a href="/laps" data-hover>Laps</a><a href="/stats" data-hover>Stats</a><a href="/refs" data-hover>References</a></nav>
+  <a class="mono credit" href="https://github.com/pr1tzy/ghostline" target="_blank" rel="noopener" data-hover>Ghostline on GitHub &#8599;</a>
+</footer>
+<div class="preview" id="preview" aria-hidden="true"><svg viewBox="0 0 100 100"></svg></div>
+<div class="toast" id="toast"></div>
+<script src="/vendor/gsap.min.js"></script>
+<script src="/vendor/lenis.min.js"></script>
+<script src="/vendor/plotly-basic.min.js"></script>
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>
