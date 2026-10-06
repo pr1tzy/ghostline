@@ -1,5 +1,7 @@
 # Ghostline
 
+[![CI](https://github.com/pr1tzy/ghostline/actions/workflows/ci.yml/badge.svg)](https://github.com/pr1tzy/ghostline/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/pr1tzy/ghostline)](https://github.com/pr1tzy/ghostline/releases/latest) ![Windows](https://img.shields.io/badge/platform-Windows-blue) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 **Find out exactly where you're losing time in Assetto Corsa.** Ghostline records your laps, quietly logs the
 fastest drivers on the server you're racing on, and shows you corner by corner where they're quicker and why.
 
