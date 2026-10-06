@@ -1,0 +1,24 @@
+name: Release zip
+
+# Attaches Ghostline.zip to every published release. The site's download button and the README
+# link to releases/latest/download/Ghostline.zip, so every release needs this file.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - name: Build Ghostline.zip
+        run: git archive --format=zip --prefix=Ghostline/ -o Ghostline.zip HEAD
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" Ghostline.zip --clobber

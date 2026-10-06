@@ -117,6 +117,14 @@ section { padding: 120px 0 56px; }
 .preview svg { width: 84%; height: 84%; }
 .empty { min-height: 80vh; display: flex; flex-direction: column; justify-content: center; gap: 28px; }
 .empty p { max-width: 540px; color: var(--mute); }
+.nav .roll.get { color: var(--ghost); }
+.get-hero { min-height: 88vh; display: flex; flex-direction: column; justify-content: center; gap: 28px; }
+.get-hero .lead { max-width: 620px; font-size: 19px; color: #cbc6d6; } .get-hero .need { max-width: 620px; }
+.files { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; color: var(--mute); } .files .hl { color: var(--ghost); } .files.pairs { display: grid; grid-template-columns: auto 1fr; gap: 10px 22px; }
+.console { margin: 0; font: 400 12px/1.65 var(--num); color: #cbc6d6; white-space: pre-wrap; overflow-wrap: anywhere; } .console b { color: var(--ghost); font-weight: 700; }
+.faq { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 56px; margin-top: 48px; }
+.faq > div { padding: 26px 0; border-top: 1px solid var(--line); } .faq h3 { font-size: 24px; margin-bottom: 8px; } .faq p { color: #cbc6d6; }
+@media (max-width: 760px) { .faq { grid-template-columns: 1fr; } .get-hero .lead { font-size: 17px; } }
 .sample-note { margin: 96px var(--pad) -72px; padding: 10px 14px; border: 1px solid var(--line2); color: var(--fg); font-size: 11px; position: relative; z-index: 2; }
 
 /* ---------- landing ---------- */

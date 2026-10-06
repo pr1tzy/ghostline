@@ -326,6 +326,7 @@ PAGES = {   # title, description per page (the frontend mirrors this for in-app 
     "session": ("Session", "One session lap by lap: consistency, spread and best sectors."),
     "live": ("Live", "Live timing from the car: deltas, sectors, standings, tyres and fuel."),
     "refs": ("References", "Where the reference laps come from: online ghosts and real-world data."),
+    "get": ("Get Ghostline", "Free and open source. Download, double-click start.bat, drive. Windows and Assetto Corsa."),
     "404": ("Not found", "Nothing at this address."),
 }
 
@@ -358,7 +359,7 @@ def robots():
 def sitemap():
     if not PUBLIC_HOST:
         raise HTTPException(404)
-    urls = "".join(f"  <url><loc>https://{PUBLIC_HOST}/{p}</loc></url>\n" for p in ("", "laps", "stats", "live", "refs"))
+    urls = "".join(f"  <url><loc>https://{PUBLIC_HOST}/{p}</loc></url>\n" for p in ("", "get", "laps", "stats", "live", "refs"))
     return Response(f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n{urls}</urlset>\n',
                     media_type="application/xml")
 

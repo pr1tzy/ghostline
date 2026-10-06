@@ -114,8 +114,8 @@ const wipe = $('.wipe'), wtitle = $('.wipe-title');
 const wipeIn = title => { wtitle.textContent = title; return gsap.timeline().set(wipe, { transformOrigin: 'bottom' }).fromTo(wipe, { scaleY: 0 }, { scaleY: 1, duration: 0.65, ease: 'expo.inOut' }).fromTo(wtitle, { yPercent: 60, opacity: 0 }, { yPercent: 0, opacity: 1, duration: 0.5, ease }, '-=.3'); };
 const wipeOut = () => gsap.timeline().to(wtitle, { yPercent: -60, opacity: 0, duration: 0.4, ease: 'expo.in' }).set(wipe, { transformOrigin: 'top' }).to(wipe, { scaleY: 0, duration: 0.75, ease: 'expo.inOut' }, '-=.1');
 const settle = (tl, ms) => Promise.race([tl, new Promise(r => setTimeout(r, ms))]);   // never hang on a paused animation
-const pages = { 404: notFound, '': home, laps: dash, compare, stats: statsPage, session: sessionPage, live: livePage, refs };
-const titles = { '': 'Ghostline', laps: 'Laps', compare: 'Delta', stats: 'Stats', session: 'Session', live: 'Live', refs: 'Refs', 404: '404' };
+const pages = { 404: notFound, '': home, laps: dash, compare, stats: statsPage, session: sessionPage, live: livePage, refs, get: getPage };
+const titles = { '': 'Ghostline', laps: 'Laps', compare: 'Delta', stats: 'Stats', session: 'Session', live: 'Live', refs: 'Refs', get: 'Get it', 404: '404' };
 const descs = {   // mirrors PAGES in backend/app.py
   '': 'Sim racing telemetry lab. Every lap against the fastest drivers, corner by corner.',
   laps: 'Every logged lap: mine and the fastest clean ghost laps, by car and track.',
@@ -124,6 +124,7 @@ const descs = {   // mirrors PAGES in backend/app.py
   session: 'One session lap by lap: consistency, spread and best sectors.',
   live: 'Live timing from the car: deltas, sectors, standings, tyres and fuel.',
   refs: 'Where the reference laps come from: online ghosts and real-world data.',
+  get: 'Free and open source. Download, double-click start.bat, drive. Windows and Assetto Corsa.',
   404: 'Nothing at this address.' };
 function notFound(view) { view.innerHTML = `<section class="empty"><div class="eyebrow">404 / <b>off track</b></div>
   <h1 class="mega split">Wrong<br><em>turn</em></h1><p>Nothing at this address. The link may be old or the lap may have been pruned.</p>
@@ -137,7 +138,7 @@ async function route() {
   $$('.nav .roll').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '/' + page));
   if (first) { const s = await api('/state').catch(() => ({})); ADMIN = !!s.admin; SAMPLES = s.samples || 0; document.body.classList.toggle('public', !ADMIN); }
   if (!first) await settle(wipeIn(titles[page]), 900);
-  document.title = page ? `${page === '404' ? 'Not found' : page === 'refs' ? 'References' : titles[page]} · Ghostline` : 'Ghostline';
+  document.title = page ? `${page === '404' ? 'Not found' : page === 'refs' ? 'References' : page === 'get' ? 'Get Ghostline' : titles[page]} · Ghostline` : 'Ghostline';
   $('meta[name="description"]').content = descs[page];
   if (my !== seq) return;                       // a newer navigation took over
   cleanup?.(); io?.disconnect(); cleanup = null;
@@ -260,7 +261,7 @@ async function home(view) {
       <div class="eyebrow"><span class="pill-live ${live.recording ? 'on' : ''}" id="hlive"><i></i><span>${live.recording ? 'On track right now' : 'Sim racing telemetry lab'}</span></span></div>
       <h1 class="mega split" style="margin-top:22px">Chase<br>the <em>ghost</em></h1>
       <p class="lede">Every lap I drive in Assetto Corsa, raced against the fastest driver on the same server. Lined up metre by metre, so the lost time gets a name.</p>
-      <div class="ctas"><a class="btn solid" href="/compare" data-hover><span>See where the time goes</span></a><a class="btn" href="/live" data-hover><span>Watch live</span></a></div>
+      <div class="ctas"><a class="btn solid" href="/compare" data-hover><span>See where the time goes</span></a><a class="btn" href="/live" data-hover><span>Watch live</span></a><a class="btn" href="/get" data-hover><span>Get your own</span></a></div>
     </div>
     ${c ? `<div class="hud"><div><small>${esc(c.track_name)} / me</small><b>${fmt(c.a.lap_ms)}</b></div><div><small>Ghost</small><b class="ghost">${fmt(c.b.lap_ms)}</b></div><div><small>Gap on track</small><b id="hgap">±0.000</b></div></div>` : ''}
     <div class="cue">Scroll</div>
@@ -809,6 +810,51 @@ async function livePage(view) {
 }
 
 /* ---------- page: references ---------- */
+const REPO = 'https://github.com/pr1tzy/ghostline';
+const DOWNLOAD = REPO + '/releases/latest/download/Ghostline.zip';   // attached to every release by .github/workflows/release.yml
+async function getPage(view) {
+  const ext = (href, label, solid) => `<a class="btn${solid ? ' solid' : ''}" href="${href}" target="_blank" rel="noopener" data-hover><span>${label}</span></a>`;
+  view.innerHTML = `
+  <section class="get-hero">
+    <div class="eyebrow">Get it / <b>free and open source</b></div>
+    <h1 class="mega split">Race your<br>own <em>ghosts</em></h1>
+    <p class="lead">Ghostline runs on your own PC next to Assetto Corsa. It records your laps, logs the fastest drivers on your server and shows you where the time goes. No account, nothing uploaded.</p>
+    <div class="ctas">${ext(DOWNLOAD, 'Download for Windows', true)}${ext(REPO, 'View on GitHub')}</div>
+    <p class="mono need">Windows 10 or 11 · Assetto Corsa on Steam · Content Manager optional · about 2 minutes to set up</p>
+  </section>
+  <section>
+    <h2 class="big split-in">Install in<br><em>three</em> steps</h2>
+    <div class="steps">
+      <div class="step" data-reveal><div class="no">01</div><div><h3 class="wide">Download</h3><p>Click <b>Download for Windows</b> to get <b>Ghostline.zip</b>, then unzip it anywhere, for example into your Documents.</p></div>
+        <div class="viz"><div class="files mono">${['ac_app', 'backend', 'docs', 'frontend', 'samples'].map(f => `<span>${f}/</span>`).join('')}<span class="hl">start.bat</span><span>stop.bat</span><span>uninstall.bat</span><span>README.md</span></div>
+        <div class="viz-cap mono"><span>What's in the folder</span><span>start.bat is the one you need</span></div></div></div>
+      <div class="step" data-reveal><div class="no">02</div><div><h3 class="wide">Double-click start.bat</h3><p>The first time, it sets itself up, which takes a couple of minutes. No Python? It offers to install it for you. If Windows says it protected your PC, click <b>More info</b>, then <b>Run anyway</b>.</p></div>
+        <div class="viz"><pre class="console">First start: setting up Ghostline.
+Installing packages. This takes a couple of minutes, once.
+Setup done.
+Assetto Corsa found: ...\\steamapps\\common\\assettocorsa
+In-game app (for ghosts): ready.
+
+<b>Ghostline is running at http://127.0.0.1:8765</b>
+Keep this window open while you drive.</pre>
+        <div class="viz-cap mono"><span>What you'll see</span><span>Your browser opens by itself</span></div></div></div>
+      <div class="step" data-reveal><div class="no">03</div><div><h3 class="wide">Drive</h3><p>Start any session in Assetto Corsa. Every lap shows up on the site as you cross the line. Race online to catch ghosts of the fastest drivers. Restart your AC session once after the first install so the in-game app loads.</p></div>
+        <div class="viz"><div class="files pairs mono"><span class="hl">Laps</span><span>every lap, by car and track</span><span class="hl">Compare</span><span>you vs the ghost, corner by corner</span><span class="hl">Live</span><span>put it on a second monitor</span><span class="hl">Stats</span><span>leaderboard, ideal lap, progress</span></div>
+        <div class="viz-cap mono"><span>Where to look</span><span>Sample laps are there from the start</span></div></div></div>
+    </div>
+  </section>
+  <section>
+    <h2 class="big split-in">Good to<br><em>know</em></h2>
+    <div class="faq">
+      <div data-reveal><h3 class="wide">Can I get banned?</h3><p>No. It doesn't change the game, your car or the server. Your laps come from the same telemetry SimHub and Crew Chief read; ghosts come from a normal in-game app. Some servers block custom apps, and there only your own laps record.</p></div>
+      <div data-reveal><h3 class="wide">Which cars and tracks?</h3><p>Every official car and track, DLCs included. Mods are skipped because their versions differ between servers, so the comparison wouldn't be fair.</p></div>
+      <div data-reveal><h3 class="wide">No console window?</h3><p>Use <code>ghostline.vbs</code> to start it hidden and <code>stop.bat</code> to stop it. <code>autostart.bat</code> starts it every time you log in.</p></div>
+      <div data-reveal><h3 class="wide">Uninstall</h3><p>Double-click <code>uninstall.bat</code>, then delete the folder. Your laps live in the <code>data</code> folder; copy it into a new version to keep them.</p></div>
+    </div>
+    <p class="mono" style="margin-top:40px">Stuck? <a href="${REPO}/issues" target="_blank" rel="noopener" data-hover>Open an issue on GitHub</a>. More detail in the <a href="${REPO}#readme" target="_blank" rel="noopener" data-hover>README</a>.</p>
+  </section>`;
+}
+
 async function refs(view) {
   const [st, laps] = await Promise.all([api('/state'), api('/laps')]);
   const a = st.app || {}, rl = laps.filter(l => l.source !== 'player'), mine = st.latest_best;

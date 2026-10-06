@@ -32,7 +32,8 @@ before you drive. They disappear once your own laps start coming in.
 
 You need Windows 10 or 11 and Assetto Corsa from Steam. Content Manager is optional.
 
-1. Download this repo: green **Code** button > **Download ZIP**, then unzip it anywhere (for example your Documents).
+1. Download **[Ghostline.zip](https://github.com/pr1tzy/ghostline/releases/latest/download/Ghostline.zip)** (the latest release) and unzip it
+   anywhere, for example into your Documents.
 2. Double-click **`start.bat`**. The first time, it sets itself up, which takes a couple of minutes. If Python
    isn't installed, it offers to install it for you.
 3. Your browser opens Ghostline. Start a session in Assetto Corsa and drive.

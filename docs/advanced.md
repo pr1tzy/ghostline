@@ -98,4 +98,7 @@ see [SECURITY.md](../SECURITY.md).
   internet and F1's servers, which often refuse cloud machines.
 - Dependency check: `.venv\Scripts\python -m pip install pip-audit && .venv\Scripts\python -m pip_audit -r requirements.txt`.
 
+- Releases: publish a GitHub release and `.github/workflows/release.yml` attaches `Ghostline.zip` to it. The site's
+  download button and the README link to `releases/latest/download/Ghostline.zip`, so every release needs that file.
+
 Issues and pull requests are welcome. Keep changes small and say how you tested them.
