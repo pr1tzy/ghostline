@@ -146,7 +146,12 @@ def _resolve(a, b, ideal):
 @app.get("/api/compare")
 def compare(request: Request, a: int, b: int | None = None, ideal: bool = False):
     c, _ = _resolve(a, b, ideal)
-    return {**c, "a": _mask(c["a"], request.state.admin), "b": _mask(c["b"], request.state.admin)}
+    me = store.get_lap(a)
+    fast = store.q("SELECT id, lap_ms, note FROM laps WHERE source='player' AND valid=0 AND car=? AND track=? AND lap_ms<? "
+                   "ORDER BY lap_ms LIMIT 1", (me["car"], me["track"], me["lap_ms"])) if me["source"] == "player" else []
+    faster = {"id": fast[0]["id"], "lap_ms": fast[0]["lap_ms"],
+              "reason": store.parse_note(fast[0]["note"]).get("cut", "invalid lap")} if fast else None
+    return {**c, "a": _mask(c["a"], request.state.admin), "b": _mask(c["b"], request.state.admin), "faster_invalid": faster}
 
 
 @app.get("/api/content")

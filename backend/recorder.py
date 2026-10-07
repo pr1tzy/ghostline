@@ -234,7 +234,8 @@ class Recorder(threading.Thread):
         track = st.track + (f"-{_clean(st.trackConfiguration)}" if _clean(st.trackConfiguration) else "")
         if 500 < st.trackSPlineLength < 40000:
             store.set_track(track, length=round(st.trackSPlineLength))
-        driver = " ".join(x for x in (st.playerName, st.playerSurname) if x).strip() or "You"
+        parts = list(dict.fromkeys(x.strip() for x in (st.playerName, st.playerSurname) if x and x.strip()))
+        driver = " ".join(parts) or "You"   # dict.fromkeys: "pr1tzy pr1tzy" when both fields hold the same name
         self.max_rpm = st.maxRpm if 1000 < st.maxRpm < 25000 else None
         self.max_fuel = _ok(st.maxFuel, 1, 500)
         return st.carModel, track, driver
@@ -364,11 +365,13 @@ class Recorder(threading.Thread):
         if not content.supported(car, track):
             return   # mod content isn't recorded (see content.py)
         a = np.array(rows, dtype=float)
-        cut = bool((a[:, 10] > 2).any())
+        off = np.flatnonzero(a[:, 10] > 2)
+        cut = bool(len(off))
+        note = json.dumps({"cut": analysis.cut_reason(track, a[:, 8], a[:, 9], float(a[off[0], 1]))}) if cut else ""
         cols = ("t", "pos", "speed", "throttle", "brake", "steer", "gear", "rpm", "x", "z")
         lap_id = store.add_lap(
             {"source": "player", "driver": driver, "car": car, "track": track, "lap_ms": lap_ms, "valid": not cut,
-             "has_inputs": 1, "origin": f"player-{time.time():.3f}"},
+             "has_inputs": 1, "origin": f"player-{time.time():.3f}", "note": note},
             {c: a[:, i] for i, c in enumerate(cols)})
         store.clear_samples()   # after the insert, so a new lap never reuses a sample's id
         self._refresh_ref(car, track)

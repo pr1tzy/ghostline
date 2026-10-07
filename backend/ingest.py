@@ -165,6 +165,7 @@ class Watcher(threading.Thread):
         try:
             load_samples()
             recheck_ghosts()
+            explain_my_invalid_laps()
         except Exception as e:
             print("recheck failed", e)
         store.prune_all()
@@ -183,6 +184,20 @@ def load_samples():
     for f in sorted(SAMPLES.glob("*_you.csv")) + sorted(SAMPLES.glob("*_ghost.csv")):   # own laps first: ghosts are checked against them
         ingest_csv(f, origin="sample:" + f.name)
     store.kv_set("samples_done", 1)
+
+
+def explain_my_invalid_laps():
+    """One-time: give my older invalid laps a reason, so the site can say why a faster lap doesn't count."""
+    if store.kv_get("cut_reasons"):
+        return
+    for l in store.q("SELECT id, track, note FROM laps WHERE source='player' AND valid=0"):
+        if "cut" in store.parse_note(l["note"]):
+            continue
+        raw = store.load_lap(l["id"])
+        if "x" in raw:
+            note = {**json.loads(l["note"] or "{}"), "cut": analysis.cut_reason(l["track"], raw["x"], raw["z"])}
+            store.q("UPDATE laps SET note=? WHERE id=?", (json.dumps(note), l["id"]))
+    store.kv_set("cut_reasons", 1)
 
 
 CUT_CHECK_VERSION = 1

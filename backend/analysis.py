@@ -366,6 +366,18 @@ def _off(c, dist):
     return abs(c[0] - dist)
 
 
+def cut_reason(track, x, z, off_pos=None):
+    """Plain words for why a lap is invalid: a shortcut through a corner, or wheels off somewhere."""
+    chk = line_check(track, x, z)
+    if chk and chk["cut"]:
+        return f"cut at {corner_at(track, chk['at'])} ({chk['dev']:.0f} m off the line)"
+    if off_pos is not None:
+        L = store.track_cfg(track).get("length")
+        if L:
+            return f"wheels off at {corner_at(track, round(off_pos * L))}"
+    return "more than 2 wheels off track"
+
+
 def corner_at(track, dist):
     names = store.track_cfg(track).get("corners", [])
     return min(names, key=lambda c: _off(c, dist))[1] if names else f"{dist} m"

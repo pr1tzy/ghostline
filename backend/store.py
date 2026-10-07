@@ -141,7 +141,10 @@ NOTE_FIELDS = ("setup", "tyres", "fuel", "conditions", "notes", "cut")
 
 
 def set_note(lap_id, fields):
-    q("UPDATE laps SET note=? WHERE id=?", (json.dumps({k: str(fields.get(k, ""))[:80] for k in NOTE_FIELDS}), int(lap_id)))
+    """Save setup notes. The cut reason is the recorder's, not the user's, so it's kept as is."""
+    cur = parse_note((q("SELECT note FROM laps WHERE id=?", (int(lap_id),)) or [{}])[0].get("note"))
+    new = {k: str(fields.get(k, ""))[:80] for k in NOTE_FIELDS if k != "cut"}
+    q("UPDATE laps SET note=? WHERE id=?", (json.dumps({**new, **({"cut": cur["cut"]} if "cut" in cur else {})}), int(lap_id)))
 
 
 def sessions(laps, gap=1200):

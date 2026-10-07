@@ -166,12 +166,12 @@ route();
 /* ---------- shared bits ---------- */
 const stat = (k, v) => `<div class="stat"><div class="eyebrow">${k}</div><div class="v" data-count="${esc(v)}">${esc(v)}</div></div>`;
 function rowHTML(l, i, isBest, go) {
-  const tag = !l.valid ? '<span class="tag dim">Cut</span>' : isBest ? '<span class="tag">Best</span>' : `<span class="tag dim">${esc(l.source_label)}</span>`;
+  const tag = !l.valid ? `<span class="tag dim" title="${esc(l.setup?.cut || 'Invalid lap')}">Cut</span>` : isBest ? '<span class="tag">Best</span>' : `<span class="tag dim">${esc(l.source_label)}</span>`;
   return `<li class="row" data-go="${go}" data-id="${l.id}" data-hover data-label="Compare" data-reveal>
     <span class="mono">${String(i + 1).padStart(2, '0')}</span>
     <span class="time">${fmt(l.lap_ms)}</span>
     <span class="hide-s"><div class="tall" style="font-size:24px">${esc(l.car_name)}</div><div class="eyebrow">${esc(l.track_name)}</div></span>
-    <span class="hide-s"><div>${esc(l.driver || '—')}</div><div class="eyebrow">${esc(l.source_label)} · ${ago(l.created)}</div></span>
+    <span class="hide-s"><div>${esc(l.driver || '—')}</div><div class="eyebrow">${esc(l.source_label)} · ${ago(l.created)}${!l.valid && l.setup?.cut ? ' · ' + esc(l.setup.cut) : ''}</div></span>
     ${tag}<button class="del admin-only" data-del="${l.id}" title="Delete lap">×</button></li>`;
 }
 function rowEvents(list, view) {
@@ -394,7 +394,7 @@ async function compare(view, [a, b]) {
   <section>
     <div class="eyebrow">Compare / <b>${esc(c.track_name)}</b> · ${(c.L / 1000).toFixed(2)} km${c.real ? ' · <b class="warn">different car class: shape comparison</b>' : ''}</div>
     <div class="duel">
-      <div class="side"><label class="eyebrow">${ideal ? 'Ideal lap (best mini-sectors)' : 'Your lap'}</label><div class="t" data-count="${fmt(A.lap_ms)}">${fmt(A.lap_ms)}</div><div class="sub eyebrow">${ideal ? `${A.sources.length} laps stitched` : esc(A.driver)} · ${esc(A.car_name)}</div>${ideal ? '' : setupHTML(A)}</div>
+      <div class="side"><label class="eyebrow">${ideal ? 'Ideal lap (best mini-sectors)' : 'Your lap'}</label><div class="t" data-count="${fmt(A.lap_ms)}">${fmt(A.lap_ms)}</div><div class="sub eyebrow">${ideal ? `${A.sources.length} laps stitched` : esc(A.driver)} · ${esc(A.car_name)}</div>${c.faster_invalid && !ideal ? `<p class="mono cutnote">Your ${fmt(c.faster_invalid.lap_ms)} doesn't count: ${esc(c.faster_invalid.reason)}. <a href="/compare/${c.faster_invalid.id}" data-hover>See that lap</a></p>` : ''}${ideal ? '' : setupHTML(A)}</div>
       <div class="gapnum ${tot > 0 ? 'loss' : 'gain'}" data-count="${sgn(tot)}">${sgn(tot)}</div>
       <div class="side b"><label class="eyebrow">Reference</label><div class="t" data-count="${fmt(B.lap_ms)}">${fmt(B.lap_ms)}</div>
         <select class="refpick" id="refpick">${refs.map(r => `<option value="${r.id}" ${r.id == b ? 'selected' : ''}>${esc(r.tier_label)} · ${esc(r.driver || r.source_label)} · ${fmt(r.lap_ms)}</option>`).join('')}</select></div>
@@ -407,7 +407,8 @@ async function compare(view, [a, b]) {
     </div>
   </section>
   <section>
-    <h2 class="big split-in">${c.insights.length ? `${String(c.insights.length).padStart(2, '0')} things<br><em>to fix</em>` : 'Clean<br><em>lap</em>'}</h2>
+    <h2 class="big split-in">${!c.insights.length ? 'Clean<br><em>lap</em>' : tot < 0 ? `${String(c.insights.length).padStart(2, '0')} places<br><em>it still beats you</em>` : `${String(c.insights.length).padStart(2, '0')} things<br><em>to fix</em>`}</h2>
+    ${tot < 0 && c.insights.length ? `<p class="mono" style="margin-top:14px">You're ${Math.abs(tot).toFixed(3)} s quicker than this reference overall. These corners are where it's still faster than you.</p>` : ''}
     <ol class="fix">${c.insights.map((s, i) => `<li data-reveal data-hover data-label="Zoom" data-zoom="${s.start},${s.end}">
       <span class="n">0${i + 1} / ${String(c.insights.length).padStart(2, '0')}</span><h3 class="wide">${esc(s.corner)}</h3>
       <span class="l loss">${sgn(s.loss)} s</span>${s.tips.map(t => `<p>${esc(t)}</p>`).join('')}</li>`).join('')}</ol>
