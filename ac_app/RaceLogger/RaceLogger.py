@@ -9,9 +9,11 @@
 #   their track position only, plus lap times and pit status 4 times a second, names every 5 seconds
 # - rates and on/off are set in Ghostline's config/logger.json (or the CSP app's window)
 # - idle when Ghostline isn't running, or when the CSP Lua version of this app (GhostlineLogger) is running
+# - starts Ghostline itself when you start a session, if you chose that (launch.cfg, written by Ghostline)
 # The window shows what it costs per frame.
 import ac
 import acsys
+import os
 import struct
 import time
 try:
@@ -54,6 +56,9 @@ perf_sum = perf_max = 0.0
 perf_n = 0
 perf_due = 2.0
 logged = set()
+launch = None              # (program, args) from launch.cfg, or None
+launched = False
+launch_at = -1e9
 status = "waiting"
 
 
@@ -70,6 +75,7 @@ def acMain(ac_version):
     ac.setSize(win, 260, 54)
     label = ac.addLabel(win, "Ghostline: waiting")
     ac.setPosition(label, 8, 28)
+    _read_launch()
     cfg = ac.getTrackConfiguration(0)
     track = ac.getTrackName(0) + ("-" + cfg if cfg else "")
     try:
@@ -88,6 +94,33 @@ def acMain(ac_version):
     return APP
 
 
+def _read_launch():
+    """launch.cfg: enabled=1, program=<Ghostline.exe or pythonw.exe>, args=<tab-separated>."""
+    global launch
+    try:
+        kv = {}
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "launch.cfg"), encoding="utf-8") as f:
+            for line in f:
+                k, _, v = line.rstrip("\n").partition("=")
+                kv[k.strip()] = v
+        if kv.get("enabled") == "1" and kv.get("program"):
+            launch = (kv["program"], [a for a in kv.get("args", "").split("\t") if a])
+    except Exception:
+        launch = None
+
+
+def _launch():
+    """Start Ghostline in the background: detached, no window, once per session."""
+    global launched, launch_at
+    launched, launch_at = True, clock
+    try:
+        import subprocess   # only now: loading it costs a moment, and most sessions never need it
+        subprocess.Popen([launch[0]] + launch[1], creationflags=0x00000008 | 0x00000200, close_fds=True,
+                         cwd=os.path.dirname(launch[0]))
+    except Exception as e:
+        _log(e)
+
+
 def _check():
     """Once a second: is Ghostline reading (its heartbeat moves), and is the Lua app writing instead of us?"""
     global active, last_beat, last_lua, beat_seen, lua_seen, want, status, step, slow, enabled
@@ -102,10 +135,13 @@ def _check():
         lua_seen = clock
     last_lua = lua
     ghostline = clock - beat_seen < 3.0
+    if not ghostline and launch and not launched and clock > 3.0:   # session is up and nobody is listening
+        _launch()
     lua_running = clock - lua_seen < 2.0
     active = ghostline and enabled and not lua_running
     status = ("CSP app is sending" if lua_running else "paused in settings" if ghostline and not enabled
-              else "sending" if ghostline else "Ghostline not running")
+              else "sending" if ghostline else "starting Ghostline" if launched and clock - launch_at < 30
+              else "Ghostline not running")
 
 
 def _names(n):

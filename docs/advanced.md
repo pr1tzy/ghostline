@@ -4,13 +4,19 @@ Nothing here is needed to use Ghostline. It's for tweaking it, publishing it, or
 
 ## Where things are
 
-| Path | What |
+Installed with `GhostlineSetup.exe`, the program lives in `%LOCALAPPDATA%\Programs\Ghostline` and everything that's
+yours lives in `%LOCALAPPDATA%\Ghostline`, so updates and reinstalls never touch it. Run from source, both are the
+repository folder.
+
+| Path (inside the folder above) | What |
 |------|------|
 | `data/` | Everything recorded: `race.db` (SQLite), one `.npz` file per lap, `ghostline.log`. Back it up to keep your laps; delete it to start over. |
 | `config/tracks.json`, `config/cars.json` | Your overrides for corner names, track lengths, car names and classes. |
-| `config/site.json` | Only for publishing (see below). Not committed; copy `config/site.example.json`. |
-| `config/logger.json` | In-game logger settings (see below). Not committed. |
-| `samples/` | The sample laps loaded on first start. |
+| `config/logger.json` | In-game logger settings (see below). |
+| `config/app.json` | App options: `launch_with_game` (start with Assetto Corsa), `check_updates` (once a day). Also on the References page and in the tray menu. |
+| `config/site.json` | Only for publishing (see below). |
+
+The sample laps loaded on first start ship with the program (`samples/`).
 
 ## Cars, tracks and corner names
 
@@ -72,6 +78,18 @@ page moves every car at its current pace, so the map stays smooth even at low ra
   your own on that track first.
 - **Estimated pedals**: throttle and brake for other cars are estimated from their speed, and shown dotted.
 
+## Run from source
+
+For working on Ghostline, or if you'd rather not run an installer. Needs Python 3.12 or newer.
+
+1. Download the source (`Ghostline-source.zip` on the release page, or `git clone`).
+2. Double-click `start.bat`. The first time it creates a private Python environment in `.venv` and installs the
+   packages; it offers to install Python if needed. Close its window to stop Ghostline.
+
+Also there: `ghostline.vbs` starts it without a console window and `stop.bat` stops it; `uninstall.bat` removes the
+in-game apps. `autostart.bat` adds Ghostline to Windows startup, but only if you run it (`autostart.bat off` removes it).
+Start with the game works from source too: the in-game app starts `pythonw run.py --with-game`.
+
 ## Publish online
 
 By default the server only listens on `127.0.0.1`, so nobody else can reach it. To share a read-only copy, you
@@ -119,6 +137,37 @@ imports, recorder on/off). Anything that arrives through a tunnel or proxy carri
 Only publish through something that adds forwarding headers (Cloudflare Tunnel does). Never bind the server to
 `0.0.0.0` or forward the port on your router: every visitor would count as admin. To report a security problem,
 see [SECURITY.md](../SECURITY.md).
+
+## Overrides
+
+Environment variables, mostly for unusual installs and for tests:
+
+| Variable | What |
+|----------|------|
+| `GHOSTLINE_AC_PATH` | Assetto Corsa folder, if it isn't a normal Steam install. |
+| `GHOSTLINE_DOCUMENTS` | The Documents folder that holds `Assetto Corsa\cfg\python.ini`, if Windows reports the wrong one. |
+| `GHOSTLINE_HOME` | Where laps and settings live (default above). |
+| `GHOSTLINE_PORT` | Local port (default 8765). |
+
+## Building a release
+
+`python packaging/build.py` builds `dist/Ghostline/` with PyInstaller, starts the built `Ghostline.exe --selftest` to
+check it really runs, then makes `Ghostline-portable.zip`, `GhostlineSetup.exe` (with Inno Setup, if installed) and
+`SHA256SUMS.txt` in `dist/release/`.
+
+Publishing a GitHub release does all of that on GitHub's Windows machines (`.github/workflows/release.yml`) and
+attaches the files, plus the source zip and a build-provenance record. The site and the README link to
+`releases/latest/download/GhostlineSetup.exe`, so every release needs that file.
+
+The build is kept unsuspicious on purpose: a folder build rather than one self-unpacking exe, no UPX packing, proper
+version information, per-user install without admin rights, nothing added to Windows startup.
+
+**Code signing** (removes the "Windows protected your PC" warning once reputation builds): the workflow signs both the
+app and the installer through the [SignPath Foundation](https://signpath.org), which signs open-source projects for
+free. After the project is accepted, add repository variables `SIGNPATH_ORGANIZATION_ID`, `SIGNPATH_PROJECT_SLUG`,
+`SIGNPATH_POLICY_SLUG` and secret `SIGNPATH_API_TOKEN`, with two artifact configurations in SignPath: `app` (the app
+folder, sign `Ghostline.exe`) and `installer` (sign `GhostlineSetup.exe`). Without them, releases are built unsigned.
+With a `VT_API_KEY` secret, a VirusTotal scan link is added to each release.
 
 ## Working on the code
 

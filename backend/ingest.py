@@ -1,6 +1,7 @@
 """Watches the in-game app's log folder + data/inbox, imports real-world F1 laps, installs the AC app."""
 import ctypes
 import json
+import os
 import filecmp
 import re
 import shutil
@@ -22,6 +23,9 @@ F1_TRACKS = {"monza": "monza", "spa-francorchamps": "spa", "silverstone": "ks_si
 # ---------- Assetto Corsa install / in-game app ----------
 
 def find_ac():
+    env = os.environ.get("GHOSTLINE_AC_PATH")   # AC installed outside Steam's folders (also used by tests)
+    if env:
+        return Path(env) if (Path(env) / "acs.exe").exists() else None
     saved = store.kv_get("ac_path")
     if saved and (Path(saved) / "acs.exe").exists():
         return Path(saved)
@@ -43,6 +47,8 @@ def find_ac():
 
 
 def documents():
+    if os.environ.get("GHOSTLINE_DOCUMENTS"):
+        return Path(os.environ["GHOSTLINE_DOCUMENTS"])
     buf = ctypes.create_unicode_buffer(260)
     ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buf)   # CSIDL_PERSONAL, follows OneDrive redirect
     return Path(buf.value)
@@ -82,6 +88,7 @@ def install_app():
     (d / "logs").mkdir(exist_ok=True)
     for old in ("live.json", "live.json.tmp"):   # the app shares data through memory now
         (d / old).unlink(missing_ok=True)
+    write_launch_cfg()
     if lua_dir():
         shutil.copytree(LUA_SRC, lua_dir(), dirs_exist_ok=True)
     ini = documents() / "Assetto Corsa" / "cfg" / "python.ini"
@@ -93,6 +100,28 @@ def install_app():
             text = text.rstrip() + "\n\n[RACELOGGER]\nACTIVE=1\n"
         ini.write_text(text)
     return app_status()
+
+
+def launch_command():
+    """How the in-game app starts Ghostline: the installed exe, or pythonw + run.py when running from source."""
+    import sys
+    from . import settings
+    if settings.FROZEN:
+        return sys.executable, ["--with-game"]
+    venv = store.ROOT / ".venv" / "Scripts" / "pythonw.exe"
+    py = venv if venv.exists() else Path(sys.executable).with_name("pythonw.exe")
+    return str(py), [str(store.ROOT / "run.py"), "--with-game"]
+
+
+def write_launch_cfg():
+    """Tells the in-game app whether, and how, to start Ghostline when a session starts."""
+    from . import settings
+    d = app_dir()
+    if not d or not d.exists():
+        return
+    program, args = launch_command()
+    on = settings.app_options()["launch_with_game"] and Path(program).exists()
+    (d / "launch.cfg").write_text(f"enabled={int(on)}\nprogram={program}\nargs={chr(9).join(args)}\n", encoding="utf-8")
 
 
 def uninstall_app():
@@ -242,28 +271,75 @@ def recheck_ghosts():
     store.kv_set("cut_check", CUT_CHECK_VERSION)
 
 
-# ---------- Real-world reference (FastF1) ----------
+# ---------- Real-world reference (OpenF1: free, seasons from 2023, no extra packages) ----------
+
+OPENF1 = "https://api.openf1.org/v1/"
+F1_SESSIONS = {"Q": "Qualifying", "R": "Race", "S": "Sprint", "SQ": "Sprint Qualifying", "SS": "Sprint Shootout",
+               "FP1": "Practice 1", "FP2": "Practice 2", "FP3": "Practice 3"}
+
+
+def _openf1(path, **params):
+    import urllib.parse
+    import urllib.request
+    q = "&".join(f"{k.replace('__gte', '>=').replace('__lte', '<=')}{'' if k.endswith(('__gte', '__lte')) else '='}"
+                 f"{urllib.parse.quote(str(v))}" for k, v in params.items())
+    req = urllib.request.Request(OPENF1 + path + "?" + q, headers={"User-Agent": "Ghostline (github.com/pr1tzy/ghostline)"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def _when(s):
+    from datetime import datetime
+    return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+
 
 def import_f1(year, gp, session="Q", driver=None, track=None):
-    import fastf1
-    fastf1.Cache.enable_cache(str(store.F1CACHE))
-    s = fastf1.get_session(int(year), gp, session)
-    s.load(laps=True, telemetry=True, weather=False, messages=False)
-    laps = s.laps.pick_drivers(driver.upper()) if driver else s.laps
-    lap = laps.pick_fastest()
-    if lap is None:
+    """Fastest lap of a real F1 session (any driver, or one driver by code like NOR), with speed, pedals, gear and line."""
+    name = F1_SESSIONS.get(session.upper(), session)
+    gp_l = gp.lower()
+    found = [x for x in _openf1("sessions", year=int(year)) if x.get("session_name", "").lower() == name.lower() and any(
+        gp_l in str(x.get(k, "")).lower() for k in ("location", "circuit_short_name", "country_name", "meeting_name"))]
+    if not found:
+        raise RuntimeError(f"No {name} found for {gp} {year} (OpenF1 has seasons from 2023)")
+    key, location = found[0]["session_key"], found[0].get("location", gp)
+    drivers = {d["driver_number"]: d for d in _openf1("drivers", session_key=key)}
+    if driver:
+        nums = [n for n, d in drivers.items() if str(d.get("name_acronym", "")).upper() == driver.upper()]
+        if not nums:
+            raise RuntimeError(f"No driver {driver.upper()} in that session")
+        laps = _openf1("laps", session_key=key, driver_number=nums[0])
+    else:
+        laps = _openf1("laps", session_key=key)
+    laps = [x for x in laps if x.get("lap_duration") and x.get("date_start") and not x.get("is_pit_out_lap")]
+    if not laps:
         raise RuntimeError("no timed lap found")
-    tel = lap.get_telemetry()
-    track = track or F1_TRACKS.get(str(s.event["Location"]).lower(), str(s.event["Location"]).lower().replace(" ", "_"))
-    dist = tel["Distance"].to_numpy(float)
+    lap = min(laps, key=lambda x: x["lap_duration"])
+    num, t0 = lap["driver_number"], _when(lap["date_start"])
+    t1 = t0 + lap["lap_duration"]
+    window = {"session_key": key, "driver_number": num, "date__gte": lap["date_start"],
+              "date__lte": __import__("datetime").datetime.fromtimestamp(t1 + 1, __import__("datetime").timezone.utc).isoformat()}
+    car = sorted(_openf1("car_data", **window), key=lambda r: r["date"])
+    loc = sorted(_openf1("location", **window), key=lambda r: r["date"])
+    if len(car) < 50 or len(loc) < 50:
+        raise RuntimeError("not enough telemetry for that lap")
+    t = np.array([_when(r["date"]) - t0 for r in car])
+    keep = (t >= 0) & (t <= t1 - t0)
+    car, t = [r for r, k in zip(car, keep) if k], t[keep]
+    speed = np.array([r["speed"] for r in car], float)
+    dist = np.concatenate([[0.0], np.cumsum(np.diff(t) * (speed[1:] + speed[:-1]) / 2 / 3.6)])   # distance from speed
+    lt = np.array([_when(r["date"]) - t0 for r in loc])
+    x = np.interp(t, lt, [r["x"] for r in loc])
+    y = np.interp(t, lt, [r["y"] for r in loc])
+    d = drivers.get(num, {})
+    code = d.get("name_acronym") or str(num)
+    track = track or F1_TRACKS.get(str(location).lower(), str(location).lower().replace(" ", "_"))
     L = store.track_cfg(track).get("length") or float(dist.max())
-    store.set_track(track, length=round(L), name=str(s.event["Location"]))
-    team = re.sub(r"\W+", "_", str(lap["Team"])).lower()
+    store.set_track(track, length=round(L), name=str(location))
+    team = re.sub(r"\W+", "_", str(d.get("team_name", "f1"))).lower()
     return store.add_lap(
-        {"source": "real", "driver": f"{lap['Driver']} ({year} {session})", "car": f"f1_{year}_{team}",
-         "track": track, "lap_ms": int(lap["LapTime"].total_seconds() * 1000), "valid": 1, "has_inputs": 1,
-         "origin": f"f1-{year}-{gp}-{session}-{lap['Driver']}"},
-        {"t": tel["Time"].dt.total_seconds().to_numpy(float), "pos": dist / dist.max(),
-         "speed": tel["Speed"].to_numpy(float), "throttle": tel["Throttle"].to_numpy(float) / 100,
-         "brake": tel["Brake"].to_numpy(float), "gear": tel["nGear"].to_numpy(float),
-         "x": tel["X"].to_numpy(float) / 10, "z": -tel["Y"].to_numpy(float) / 10})
+        {"source": "real", "driver": f"{code} ({year} {session.upper()})", "car": f"f1_{year}_{team}",
+         "track": track, "lap_ms": int(lap["lap_duration"] * 1000), "valid": 1, "has_inputs": 1,
+         "origin": f"f1-{year}-{gp}-{session}-{code}"},
+        {"t": t, "pos": dist / dist.max(), "speed": speed, "throttle": np.array([r["throttle"] for r in car], float) / 100,
+         "brake": (np.array([r["brake"] for r in car], float) > 0).astype(float), "gear": np.array([r["n_gear"] for r in car], float),
+         "x": x / 10, "z": -y / 10})

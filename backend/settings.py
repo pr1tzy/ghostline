@@ -14,15 +14,23 @@ Environment variables GHOSTLINE_PORT and GHOSTLINE_HOST override both.
 import json
 import os
 import re
+import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+# Where things live. From source: everything in the repo folder. Installed (Ghostline.exe): the program's own files
+# in the install folder, your laps and settings in %LOCALAPPDATA%\Ghostline, so updates and reinstalls never touch them.
+FROZEN = bool(getattr(sys, "frozen", False))
+ROOT = Path(getattr(sys, "_MEIPASS", "")) if FROZEN else Path(__file__).resolve().parent.parent   # bundled files
+HOME = Path(os.environ.get("GHOSTLINE_HOME") or
+            (Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "Ghostline" if FROZEN else ROOT))
+DATA_DIR = HOME / "data"
+USER_CONFIG = HOME / "config"
 REPO_URL = "https://github.com/pr1tzy/ghostline"
-TUNNEL_CFG = ROOT / "cloudflared" / "ghostline.yml"
+TUNNEL_CFG = HOME / "cloudflared" / "ghostline.yml"
 
 
 def _site():
-    p = ROOT / "config" / "site.json"
+    p = USER_CONFIG / "site.json"
     try:
         return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
     except ValueError:
@@ -49,7 +57,7 @@ CREDIT_URL = str(_s.get("credit_url") or "").strip()
 
 
 # ---------- in-game logger settings: config/logger.json (not committed), also editable from the CSP app's window ----------
-LOGGER_FILE = ROOT / "config" / "logger.json"
+LOGGER_FILE = USER_CONFIG / "logger.json"
 LOGGER_DEFAULTS = {
     "enabled": True,      # the in-game app sends anything at all
     "sample_hz": 30,      # how often the in-game app reads each car (position, speed, gear)
@@ -97,5 +105,30 @@ def logger():
 
 def save_logger(changes):
     new = _clean_logger({**logger(), **changes})
+    LOGGER_FILE.parent.mkdir(parents=True, exist_ok=True)
     LOGGER_FILE.write_text(json.dumps(new, indent=2) + "\n", encoding="utf-8")
     return logger()
+
+
+# ---------- app options: config/app.json ----------
+APP_FILE = USER_CONFIG / "app.json"
+APP_DEFAULTS = {
+    "launch_with_game": False,  # the in-game app starts Ghostline when you start a session: only if you said so
+                                # (the installer asks; the tray menu and References page can change it)
+    "check_updates": True,      # once a day, ask GitHub whether there's a newer release (nothing else is sent)
+}
+
+
+def app_options():
+    try:
+        data = json.loads(APP_FILE.read_text(encoding="utf-8")) if APP_FILE.exists() else {}
+    except ValueError:
+        data = {}
+    return {k: bool(data.get(k, v)) for k, v in APP_DEFAULTS.items()}
+
+
+def save_app_options(changes):
+    new = {**app_options(), **{k: bool(v) for k, v in changes.items() if k in APP_DEFAULTS}}
+    APP_FILE.parent.mkdir(parents=True, exist_ok=True)
+    APP_FILE.write_text(json.dumps(new, indent=2) + "\n", encoding="utf-8")
+    return new

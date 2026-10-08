@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.1.0
+
+Ghostline now installs like a normal Windows app.
+
+- **GhostlineSetup.exe**: about 25 MB, installs for your user only (no admin prompt), Start Menu entry, uninstall
+  from Windows Settings (removes the in-game apps too, and asks whether to keep your laps). Laps and settings live
+  in `%LOCALAPPDATA%\Ghostline`, so updates never touch them. A portable zip is there too.
+- **Starts with the game, not with Windows.** If you choose it in the installer, the in-game app starts Ghostline when
+  you start a session, and Ghostline closes a few minutes after the game. Nothing is added to Windows startup.
+- **Tray icon** while it runs: open the site, turn start-with-the-game on or off, quit.
+- **Update notice**: once a day Ghostline asks GitHub whether a newer version exists (switch it off on the References
+  page).
+- **Lighter**: scipy replaced by a few lines of numpy (identical results), and the real-world F1 import now uses the
+  free OpenF1 API (seasons from 2023) instead of FastF1. The install went from about 390 MB of packages to about 80 MB.
+- **Release builds** are made by GitHub from the tagged source, checked by actually starting the built app, with
+  checksums and a build-provenance record. Code signing switches on once the free open-source signing is approved.
+
 ## 2.0.0
 
 The in-game side was rebuilt to cost almost nothing inside Assetto Corsa.

@@ -14,3 +14,6 @@ cloudflared/*.yml
 ai_slop_to_avoid.md
 PLAN.md
 config/logger.json
+dist/
+build/
+packaging/version_info.txt

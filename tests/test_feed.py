@@ -57,7 +57,15 @@ settings.LOGGER_FILE = Path(os.environ["RA_DATA"]) / "logger.json"   # never tou
 SUFFIX = f".test{os.getpid()}"
 carfeed.CARS, carfeed.WANT, carfeed.SET = (carfeed.CARS + SUFFIX, carfeed.WANT + SUFFIX, carfeed.SET + SUFFIX)
 
-spec = importlib.util.spec_from_file_location("RaceLogger", ROOT / "ac_app" / "RaceLogger" / "RaceLogger.py")
+# the app runs from a temp copy, with a launch.cfg whose "Ghostline" is a harmless command that leaves a flag file
+import shutil  # noqa: E402
+APPDIR = Path(os.environ["RA_DATA"]) / "RaceLogger"
+APPDIR.mkdir()
+shutil.copy(ROOT / "ac_app" / "RaceLogger" / "RaceLogger.py", APPDIR)
+FLAG = APPDIR / "launched.flag"
+LAUNCH = ["enabled=1", f"program={sys.executable}", "args=" + chr(9).join(["-c", f"open(r'{FLAG}', 'w').write('ok')"])]
+(APPDIR / "launch.cfg").write_text(chr(10).join(LAUNCH) + chr(10), encoding="utf-8")
+spec = importlib.util.spec_from_file_location("RaceLogger", APPDIR / "RaceLogger.py")
 app = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(app)
 app.CARS, app.WANT = app.CARS + SUFFIX, app.WANT + SUFFIX
@@ -84,6 +92,11 @@ def run(seconds, with_feed):
 # 1. nobody listening: the app idles
 idle = run(5, with_feed=False)
 assert not app.active, "app should idle while Ghostline isn't running"
+for _ in range(50):   # it should have started "Ghostline" once the session was 3 s old with nobody listening
+    if FLAG.exists():
+        break
+    time.sleep(0.1)
+assert FLAG.exists() and app.launched, "the in-game app should start Ghostline when it isn't running"
 # 2. Ghostline running: three laps
 busy = run(250, with_feed=True)
 assert app.active, "app should send once Ghostline's heartbeat is there"

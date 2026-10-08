@@ -2,8 +2,6 @@
 from functools import lru_cache
 
 import numpy as np
-from scipy.signal import find_peaks
-from scipy.spatial import cKDTree
 
 from . import store
 
@@ -66,6 +64,60 @@ def prep(lap_id):
         p["brake"] = np.clip((-acc - 0.6) / 1.5, 0, 1)
         p["throttle"] = np.where(p["brake"] > 0, 0, np.clip((acc + 0.5) / 0.7, 0, 1))
     return p
+
+
+
+# ---------- small numpy stand-ins for the two scipy functions used here (keeps the install light) ----------
+def find_peaks(x, prominence, distance):
+    """Same result as scipy.signal.find_peaks(x, prominence=..., distance=...) for these inputs:
+    local maxima (middle of flat tops), then the highest peak wins within `distance`, then prominence >= `prominence`."""
+    x = np.asarray(x, dtype=float)
+    n, peaks, i = len(x), [], 1
+    while i < n - 1:
+        if x[i - 1] < x[i]:
+            j = i + 1
+            while j < n - 1 and x[j] == x[i]:
+                j += 1
+            if x[j] < x[i]:
+                peaks.append((i + j - 1) // 2)
+                i = j
+        i += 1
+    peaks = np.array(peaks, dtype=int)
+    if len(peaks) and distance > 1:
+        keep = np.ones(len(peaks), bool)
+        for k in np.argsort(x[peaks])[::-1]:   # default sort, like scipy, so ties break the same way
+            if not keep[k]:
+                continue
+            j = k - 1
+            while j >= 0 and peaks[k] - peaks[j] < distance:
+                keep[j] = False
+                j -= 1
+            j = k + 1
+            while j < len(peaks) and peaks[j] - peaks[k] < distance:
+                keep[j] = False
+                j += 1
+        peaks = peaks[keep]
+    out = []
+    for p in peaks:
+        left = x[:p + 1]
+        higher = np.flatnonzero(left[:-1] > x[p])
+        lmin = left[higher[-1] + 1 if len(higher) else 0:].min()
+        right = x[p:]
+        higher = np.flatnonzero(right[1:] > x[p])
+        rmin = right[:higher[0] + 1 if len(higher) else len(right)].min()
+        if x[p] - max(lmin, rmin) >= prominence:
+            out.append(p)
+    return np.array(out, dtype=int), {}
+
+
+def nearest(ref_xy, pts, chunk=2048):
+    """Distance from each point to the closest reference point, and its index (what a KD-tree query gives)."""
+    dist, idx = np.empty(len(pts)), np.empty(len(pts), dtype=int)
+    for a in range(0, len(pts), chunk):
+        d2 = ((pts[a:a + chunk, None, :] - ref_xy[None, :, :]) ** 2).sum(-1)
+        idx[a:a + chunk] = d2.argmin(1)
+        dist[a:a + chunk] = np.sqrt(d2[np.arange(len(d2)), idx[a:a + chunk]])
+    return dist, idx
 
 
 def find_corners(ref):
@@ -343,7 +395,7 @@ MAX_DEV_M, MAX_SHORT_M = 15.0, 20.0
 @lru_cache(maxsize=8)
 def _line_ref(track, ref_id):
     p = prep(ref_id)
-    return cKDTree(np.c_[p["x"], p["z"]]), float(np.sum(np.hypot(np.diff(p["x"]), np.diff(p["z"])))), p["d"]
+    return np.c_[p["x"], p["z"]], float(np.sum(np.hypot(np.diff(p["x"]), np.diff(p["z"])))), p["d"]
 
 
 def line_check(track, x, z):
@@ -351,8 +403,8 @@ def line_check(track, x, z):
     r = store.q("SELECT id FROM laps WHERE source='player' AND valid=1 AND track=? ORDER BY lap_ms LIMIT 1", (track,))
     if not r or len(x) < 50:
         return None
-    tree, ref_len, ref_d = _line_ref(track, r[0]["id"])
-    dist, idx = tree.query(np.c_[x, z])
+    ref_xy, ref_len, ref_d = _line_ref(track, r[0]["id"])
+    dist, idx = nearest(ref_xy, np.c_[x, z])
     worst = int(np.argmax(dist))
     dev, short = float(dist[worst]), ref_len - float(np.sum(np.hypot(np.diff(x), np.diff(z))))
     cut = dev > MAX_DEV_M or short > MAX_SHORT_M

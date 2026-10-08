@@ -126,6 +126,8 @@ section { padding: 120px 0 56px; }
 .faq > div { padding: 26px 0; border-top: 1px solid var(--line); } .faq h3 { font-size: 24px; margin-bottom: 8px; } .faq p { color: #cbc6d6; }
 @media (max-width: 760px) { .faq { grid-template-columns: 1fr; } .get-hero .lead { font-size: 17px; } }
 .cutnote { margin: 10px 0 0; max-width: 420px; color: var(--loss); text-transform: none; letter-spacing: .02em; } .cutnote a { color: var(--fg); }
+.appopts { display: grid; gap: 12px; margin: 0 0 72px; padding: 22px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.appopts label { display: flex; gap: 12px; align-items: baseline; color: #cbc6d6; max-width: 760px; } .appopts input { accent-color: var(--ghost); }
 .sample-note { margin: 96px var(--pad) -72px; padding: 10px 14px; border: 1px solid var(--line2); color: var(--fg); font-size: 11px; position: relative; z-index: 2; }
 
 /* ---------- landing ---------- */

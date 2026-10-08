@@ -1,24 +1,120 @@
-name: Release zip
+name: Release
 
-# Attaches Ghostline.zip to every published release. The site's download button and the README
-# link to releases/latest/download/Ghostline.zip, so every release needs this file.
+# Publishing a GitHub release builds and attaches:
+#   GhostlineSetup.exe       installer (per user, no admin)
+#   Ghostline-portable.zip   the same app, unzip and run Ghostline.exe
+#   Ghostline-source.zip     the source code
+#   SHA256SUMS.txt           checksums of the above
+# The site's download button and the README link to releases/latest/download/GhostlineSetup.exe.
+#
+# Code signing (SignPath Foundation, free for open source) switches on by itself once these repository settings
+# exist: variables SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG, SIGNPATH_POLICY_SLUG and secret SIGNPATH_API_TOKEN.
+# A VirusTotal scan link is added to the release notes when the secret VT_API_KEY exists.
+# Run it by hand (Actions > Release > Run workflow) to test a build without releasing.
+
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
-  zip:
-    runs-on: ubuntu-latest
+  windows:
+    runs-on: windows-latest
+    env:
+      SIGNING: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+      VIRUSTOTAL: ${{ secrets.VT_API_KEY != '' }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.release.tag_name }}
-      - name: Build Ghostline.zip
-        run: git archive --format=zip --prefix=Ghostline/ -o Ghostline.zip HEAD
+          ref: ${{ github.event.release.tag_name || github.ref }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -r requirements.txt pyinstaller
+      - run: choco install innosetup -y --no-progress
+
+      - name: Build Ghostline.exe and check it starts
+        run: python packaging/build.py app
+
+      # ---- signing the app (before it goes into the installer) ----
+      - id: app_unsigned
+        if: env.SIGNING == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-unsigned
+          path: dist/Ghostline
+      - if: env.SIGNING == 'true'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: app
+          github-artifact-id: ${{ steps.app_unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: dist/Ghostline
+
+      - name: Portable zip, installer, checksums
+        run: python packaging/build.py package
+
+      # ---- signing the installer ----
+      - id: setup_unsigned
+        if: env.SIGNING == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: setup-unsigned
+          path: dist/release/GhostlineSetup.exe
+      - if: env.SIGNING == 'true'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.setup_unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: dist/release
+
+      - name: Source zip and final checksums
+        shell: bash
+        run: |
+          git archive --format=zip --prefix=Ghostline/ -o dist/release/Ghostline-source.zip HEAD
+          python packaging/build.py sums
+          cat dist/release/SHA256SUMS.txt
+
+      - name: Build provenance (proves the files were built from this repository)
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/release/GhostlineSetup.exe
+            dist/release/Ghostline-portable.zip
+
       - name: Attach to the release
+        if: github.event_name == 'release'
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" Ghostline.zip --clobber
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/release/* --clobber
+
+      - name: Keep the build (manual runs)
+        if: github.event_name != 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghostline-build
+          path: dist/release
+
+      - name: VirusTotal scan link in the release notes
+        if: github.event_name == 'release' && env.VIRUSTOTAL == 'true'
+        uses: crazy-max/ghaction-virustotal@v4
+        with:
+          vt_api_key: ${{ secrets.VT_API_KEY }}
+          files: dist/release/GhostlineSetup.exe
+          update_release_body: true

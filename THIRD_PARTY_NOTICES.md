@@ -24,12 +24,13 @@ apply to them.
 ## Python packages
 
 Installed from PyPI by `setup.bat` (see `requirements.txt`): FastAPI, Starlette, Uvicorn, Pydantic (MIT),
-NumPy, SciPy (BSD-3-Clause), Pillow (MIT-CMU), FastF1 (MIT). They are not included in this repository.
+NumPy (BSD-3-Clause), Pillow (MIT-CMU). They are not included in this repository.
 
 ## Data
 
-- Real-world laps come from Formula 1 timing data through [FastF1](https://github.com/theOehrly/Fast-F1). They
-  are downloaded on demand and never committed. Formula 1 data is for personal, non-commercial use.
+- Real-world laps come from [OpenF1](https://openf1.org), a free API for Formula 1 timing data (seasons from 2023).
+  They are downloaded on demand and never committed. Formula 1 data is for personal, non-commercial use. Ghostline
+  is not associated with Formula 1.
 - Car and track names, lengths and corner names are read at runtime from your own Assetto Corsa install. None of
   the game's files are included here. Assetto Corsa is a trademark of its owners; Ghostline is not affiliated with
   Kunos Simulazioni or 505 Games.

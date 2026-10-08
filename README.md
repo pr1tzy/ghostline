@@ -32,26 +32,29 @@ before you drive. They disappear once your own laps start coming in.
 
 You need Windows 10 or 11 and Assetto Corsa from Steam. Content Manager is optional.
 
-1. Download **[Ghostline.zip](https://github.com/pr1tzy/ghostline/releases/latest/download/Ghostline.zip)** (the latest release) and unzip it
-   anywhere, for example into your Documents.
-2. Double-click **`start.bat`**. The first time, it sets itself up, which takes a couple of minutes. If Python
-   isn't installed, it offers to install it for you.
-3. Your browser opens Ghostline. Start a session in Assetto Corsa and drive.
+1. Download **[GhostlineSetup.exe](https://github.com/pr1tzy/ghostline/releases/latest/download/GhostlineSetup.exe)** (about 25 MB).
+2. Run it. It installs just for you, so there's no admin prompt. It asks one thing: whether Ghostline should start
+   when you start a session in Assetto Corsa (and close a few minutes after the game). Nothing is ever added to
+   Windows startup.
+3. Ghostline opens in your browser. Start a session in Assetto Corsa and drive. The first time, restart that session
+   once so the game loads Ghostline's in-game app.
 
-If Windows shows "Windows protected your PC" for the `.bat` file, click **More info > Run anyway**. The scripts
-are plain text, so you can open them in Notepad to see what they do.
+**"Windows protected your PC"?** Ghostline isn't code-signed yet (free signing for open-source projects is on its
+way). Click **More info > Run anyway**. Every release is built by GitHub from this repository's source, and the release
+page lists checksums and a build-provenance record so you can check the file is the real one.
+
+Prefer no installer? Each release also has `Ghostline-portable.zip` (unzip, run `Ghostline.exe`), and you can run it
+from source: see [docs/advanced.md](docs/advanced.md#run-from-source).
 
 ## Using it
 
-- Keep `start.bat` running while you drive. Close its window to stop Ghostline.
-- Don't want a console window? Use `ghostline.vbs` to start it hidden and `stop.bat` to stop it.
-  `autostart.bat` starts it hidden every time you log in to Windows (`autostart.bat off` undoes that).
+- While Ghostline runs, its icon sits by the clock. Click it to open the site; right-click for the menu (start with
+  the game on/off, quit).
+- Open it any time from the Start Menu to look at your laps without the game.
 - The site lives at http://127.0.0.1:8765. Put the **Live** page on a second monitor while you race.
-- Logger settings (how often cars are sampled, which cars, on/off) are in `config/logger.json`, or in the
-  Ghostline Logger window in the game if you have Custom Shaders Patch. See
-  [docs/advanced.md](docs/advanced.md#logger-settings).
-- For ghosts, race online (or against the AI) with the in-game app running. Ghostline installs it into AC for you;
-  restart your AC session once after the first start.
+- For ghosts, race online (or against the AI). Ghostline installs its in-game app into AC for you.
+- Logger settings (how often cars are sampled, which cars, on/off) are in the Ghostline Logger window in the game if
+  you have Custom Shaders Patch, or in a settings file: see [docs/advanced.md](docs/advanced.md#logger-settings).
 
 ## FAQ
 
@@ -64,7 +67,12 @@ car is and how fast it's going). Some servers block custom apps; there, your lap
 Yes, that's the main use. Ghosts are logged from whichever server you're on, for the car you're driving.
 
 **Does it send my data anywhere?**
-No. Everything stays on your PC in the `data` folder. Nothing is uploaded, and there's no account.
+No. Everything stays on your PC (in `%LOCALAPPDATA%\Ghostline`). Nothing is uploaded and there's no account. Once a
+day Ghostline asks GitHub whether a newer version exists; you can switch that off on the References page.
+
+**Does it run in the background all the time?**
+No. If you chose "start with the game", it starts when you start a session in Assetto Corsa and closes a few minutes
+after you quit the game. Otherwise it only runs when you open it. It never starts with Windows.
 
 **Which cars and tracks work?**
 Every official Assetto Corsa car and track, including the DLCs. Mod cars and tracks are skipped, because mod
@@ -81,31 +89,30 @@ By default only you can, on your own PC. If you want a public read-only copy, se
 [docs/advanced.md](docs/advanced.md#publish-online).
 
 **How do I update?**
-Download the new version and copy your `data` folder into it (that's where your laps are), or `git pull` if you
-cloned it. `start.bat` installs any new packages by itself.
+Ghostline tells you when a new version is out (tray menu and References page). Download the new installer and run
+it; your laps and settings stay where they are.
 
 **How do I uninstall it?**
-Double-click `uninstall.bat`. It removes the in-game app from AC and the autostart entry. Then delete the folder.
+Windows Settings > Apps > Ghostline > Uninstall. It also removes the in-game apps from Assetto Corsa, and asks
+whether to keep your laps for a later reinstall.
 
 ## Something not working?
 
 - **Live says "Waiting for AC"**: the game only shares telemetry in a session (on track or in the pits), not in
   the menus.
 - **No ghosts**: ghosts are only recorded while Ghostline is running. Open the **References** page, which shows
-  whether the in-game app is installed and active.
-  Restart your AC session after the first install. In Content Manager, check Settings > Assetto Corsa > Apps and
-  tick RaceLogger.
+  whether the in-game app is installed and active. Restart your AC session after the first install. In Content
+  Manager, check Settings > Assetto Corsa > Apps and tick RaceLogger.
 - **"Mod content: not recorded"**: that car or track isn't official content (see the FAQ).
-- **Ghostline won't start**: run `start.bat` and read the console. When it's started hidden, the log is in
-  `data/ghostline.log`.
+- **Ghostline won't start**: the log is in `%LOCALAPPDATA%\Ghostline\data\ghostline.log`.
 
 Still stuck? [Open an issue](https://github.com/pr1tzy/ghostline/issues) with the log.
 
 ## More
 
 - [CHANGELOG.md](CHANGELOG.md): what changed in each version.
-
-- [docs/advanced.md](docs/advanced.md): settings, renaming corners, publishing online, the security model, and
-  working on the code.
+- [docs/advanced.md](docs/advanced.md): settings, renaming corners, running from source, publishing online, the
+  security model, building releases, and working on the code.
+- [ROADMAP.md](ROADMAP.md): what's planned next.
 - License: [MIT](LICENSE). Fonts and libraries: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 - Ghostline is a fan project, not affiliated with or endorsed by Kunos Simulazioni, 505 Games or Formula 1.

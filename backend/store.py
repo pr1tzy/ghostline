@@ -9,11 +9,13 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent.parent
-DATA = Path(os.environ.get("RA_DATA", ROOT / "data"))
-LAPDIR, INBOX, F1CACHE = DATA / "laps", DATA / "inbox", ROOT / "data" / "f1cache"
+from . import settings
+
+ROOT = settings.ROOT
+DATA = Path(os.environ.get("RA_DATA") or settings.DATA_DIR)
+LAPDIR, INBOX = DATA / "laps", DATA / "inbox"
 CONFIG = ROOT / "config"
-for _p in (LAPDIR, INBOX, F1CACHE):
+for _p in (LAPDIR, INBOX):
     _p.mkdir(parents=True, exist_ok=True)
 
 _lock = threading.RLock()
@@ -165,8 +167,14 @@ def sessions(laps, gap=1200):
 
 
 def _cfg(name):
-    p = CONFIG / f"{name}.json"
-    return json.loads(p.read_text()) if p.exists() else {}
+    """Bundled defaults (config/), then your own overrides (the user config folder, when installed)."""
+    out = {}
+    for d in dict.fromkeys((CONFIG, settings.USER_CONFIG)):
+        p = d / f"{name}.json"
+        if p.exists():
+            for k, v in json.loads(p.read_text()).items():
+                out[k] = {**out.get(k, {}), **v}
+    return out
 
 
 def _learned():

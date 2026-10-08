@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel, Field
 
-from . import __version__, analysis, content, ingest, settings, share, store
+from . import __version__, analysis, content, ingest, runtime, settings, share, store
 
 for _ext, _type in ((".otf", "font/otf"), (".woff2", "font/woff2"), (".svg", "image/svg+xml"), (".js", "text/javascript")):
     mimetypes.add_type(_type, _ext)
@@ -99,6 +99,8 @@ def state(request: Request):
     total = store.q("SELECT COUNT(*) n FROM laps")[0]["n"]
     return {"admin": admin, "version": __version__, "groups": groups, "total": total, "samples": store.sample_count(),
             "app": ingest.app_status() if admin else None,
+            "ghostline": {"mode": runtime.mode, "update": runtime.update, "options": settings.app_options(),
+                          "installed": settings.FROZEN} if admin else None,
             "recorder": recorder.state, "latest_best": groups[0]["best_id"] if groups else None}
 
 
@@ -278,6 +280,20 @@ class Toggle(BaseModel):
 def toggle(t: Toggle):
     recorder.set_enabled(t.on)
     return recorder.state
+
+
+class AppOptions(BaseModel):
+    launch_with_game: bool | None = None
+    check_updates: bool | None = None
+
+
+@app.put("/api/app-options")
+def app_options(o: AppOptions):
+    new = settings.save_app_options({k: v for k, v in o.model_dump().items() if v is not None})
+    ingest.write_launch_cfg()
+    if o.check_updates:
+        runtime.check_update()
+    return new
 
 
 @app.post("/api/install-app")
