@@ -1,0 +1,38 @@
+name: Scan release
+
+# Scans an already published release's installer on VirusTotal and adds the link to its release notes, without
+# rebuilding anything. New releases get this automatically (release.yml); run it by hand for older ones.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, for example v2.1.0
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: Download the published installer
+        run: gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p GhostlineSetup.exe
+      - id: vt
+        uses: crazy-max/ghaction-virustotal@v4
+        with:
+          vt_api_key: ${{ secrets.VT_API_KEY }}
+          files: GhostlineSetup.exe
+      - name: Add the scan link to the release notes
+        env:
+          ANALYSIS: ${{ steps.vt.outputs.analysis }}
+        run: |
+          url="${ANALYSIS#*=}"
+          test -n "$url" || { echo "no scan link returned"; exit 1; }
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json body -q .body > notes.md
+          grep -q "virustotal.com" notes.md || printf '\n\n**VirusTotal scan of GhostlineSetup.exe:** %s\n' "$url" >> notes.md
+          gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --notes-file notes.md
+          echo "$url"

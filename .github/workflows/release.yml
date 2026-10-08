@@ -116,5 +116,5 @@ jobs:
         uses: crazy-max/ghaction-virustotal@v4
         with:
           vt_api_key: ${{ secrets.VT_API_KEY }}
-          files: dist/release/GhostlineSetup.exe
+          files: GhostlineSetup.exe   # on a release this matches the release's file names, not local paths
           update_release_body: true
