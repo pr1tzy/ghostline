@@ -40,7 +40,7 @@ You need Windows 10 or 11 and Assetto Corsa from Steam. Content Manager is optio
    once so the game loads Ghostline's in-game app.
 
 **"Windows protected your PC"?** Ghostline isn't code-signed yet (free signing for open-source projects is on its
-way). Click **More info > Run anyway**. Every release is built by GitHub from this repository's source, and the release
+way, see the [code signing policy](#code-signing-policy)). Click **More info > Run anyway**. Every release is built by GitHub from this repository's source, and the release
 page lists checksums and a build-provenance record so you can check the file is the real one.
 
 Prefer no installer? Each release also has `Ghostline-portable.zip` (unzip, run `Ghostline.exe`), and you can run it
@@ -67,8 +67,8 @@ car is and how fast it's going). Some servers block custom apps; there, your lap
 Yes, that's the main use. Ghosts are logged from whichever server you're on, for the car you're driving.
 
 **Does it send my data anywhere?**
-No. Everything stays on your PC (in `%LOCALAPPDATA%\Ghostline`). Nothing is uploaded and there's no account. Once a
-day Ghostline asks GitHub whether a newer version exists; you can switch that off on the References page.
+No. Everything stays on your PC (in `%LOCALAPPDATA%\Ghostline`). Nothing is uploaded and there's no account. If you
+tick it in the installer, Ghostline asks GitHub once a day whether a newer version exists. See [Privacy](#privacy).
 
 **Does it run in the background all the time?**
 No. If you chose "start with the game", it starts when you start a session in Assetto Corsa and closes a few minutes
@@ -107,6 +107,29 @@ whether to keep your laps for a later reinstall.
 - **Ghostline won't start**: the log is in `%LOCALAPPDATA%\Ghostline\data\ghostline.log`.
 
 Still stuck? [Open an issue](https://github.com/pr1tzy/ghostline/issues) with the log.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by
+[SignPath Foundation](https://signpath.org).
+
+- Committers and reviewers: [pr1tzy](https://github.com/pr1tzy)
+- Approvers: [pr1tzy](https://github.com/pr1tzy)
+
+Every release is built by GitHub Actions from this repository's source (`.github/workflows/release.yml`), and each
+signing request is approved by hand. Only files built from this repository are signed.
+
+## Privacy
+
+This program will not transfer any information to other networked systems unless specifically requested by the user
+or the person installing or operating it. Ghostline only goes online when you ask it to:
+
+- **Update check**, if you tick it in the installer (or on the References page): once a day it asks GitHub for the
+  newest release number ([GitHub's privacy statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement)).
+- **Real-world F1 laps**, when you import one: downloaded from [OpenF1](https://openf1.org).
+- **Publishing your site**, only if you set up a Cloudflare Tunnel yourself (see docs/advanced.md).
+
+Everything Ghostline records stays on your PC. There's no account, no analytics and no telemetry.
 
 ## More
 

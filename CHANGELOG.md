@@ -10,7 +10,7 @@ Ghostline now installs like a normal Windows app.
 - **Starts with the game, not with Windows.** If you choose it in the installer, the in-game app starts Ghostline when
   you start a session, and Ghostline closes a few minutes after the game. Nothing is added to Windows startup.
 - **Tray icon** while it runs: open the site, turn start-with-the-game on or off, quit.
-- **Update notice**: once a day Ghostline asks GitHub whether a newer version exists (switch it off on the References
+- **Update notice**, if you tick it in the installer: once a day Ghostline asks GitHub whether a newer version exists (change it on the References
   page).
 - **Lighter**: scipy replaced by a few lines of numpy (identical results), and the real-world F1 import now uses the
   free OpenF1 API (seasons from 2023) instead of FastF1. The install went from about 390 MB of packages to about 80 MB.

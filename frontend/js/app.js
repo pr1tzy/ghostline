@@ -856,6 +856,7 @@ async function getPage(view) {
     <p class="lead">Ghostline runs on your own PC next to Assetto Corsa. It records your laps, logs the fastest drivers on your server and shows you where the time goes. No account, nothing uploaded.</p>
     <div class="ctas">${ext(DOWNLOAD, 'Download for Windows', true)}${ext(REPO, 'View on GitHub')}</div>
     <p class="mono need">Windows 10 or 11 · Assetto Corsa on Steam · Content Manager optional · about 25 MB · no admin rights needed</p>
+    <p class="mono need"><a href="${REPO}#code-signing-policy" target="_blank" rel="noopener" data-hover>Code signing policy</a> · <a href="${REPO}#privacy" target="_blank" rel="noopener" data-hover>Privacy</a> · Free code signing provided by <a href="https://signpath.io" target="_blank" rel="noopener" data-hover>SignPath.io</a>, certificate by <a href="https://signpath.org" target="_blank" rel="noopener" data-hover>SignPath Foundation</a></p>
   </section>
   <section>
     <h2 class="big split-in">Install in<br><em>three</em> steps</h2>
@@ -907,7 +908,7 @@ async function refs(view) {
     ${st.ghostline ? `<div class="appopts admin-only" data-reveal>
       <div class="eyebrow">Ghostline app / <b>v${esc(st.version)}</b>${st.ghostline.update ? ` · <a href="${esc(st.ghostline.update.url)}" target="_blank" rel="noopener" data-hover>update available: ${esc(st.ghostline.update.version)}</a>` : ''}</div>
       <label><input type="checkbox" data-opt="launch_with_game" ${st.ghostline.options.launch_with_game ? 'checked' : ''}> Start Ghostline when I start a session in Assetto Corsa, and close it a few minutes after the game. Nothing is added to Windows startup.</label>
-      <label><input type="checkbox" data-opt="check_updates" ${st.ghostline.options.check_updates ? 'checked' : ''}> Check GitHub for a new version once a day (nothing else is sent).</label>
+      <label><input type="checkbox" data-opt="check_updates" ${st.ghostline.options.check_updates ? 'checked' : ''}> Tell me when a new version is out: asks GitHub once a day, nothing else is sent.</label>
     </div>` : ''}
     <h2 class="big split-in">Reference<br><em>laps</em></h2>
     <ol class="rows" id="rrows" style="margin-top:40px">${rl.map((l, i) => rowHTML(l, i, false, mine ? `/compare/${mine}/${l.id}` : '')).join('') || '<li class="mono" style="padding:20px 0">None yet.</li>'}</ol>

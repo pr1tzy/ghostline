@@ -37,6 +37,7 @@ RestartApplications=no
 
 [Tasks]
 Name: "withgame"; Description: "Start Ghostline when I start a session in Assetto Corsa, and close it a few minutes after the game. (Nothing is added to Windows startup. You can change this later in the tray menu.)"; GroupDescription: "When should Ghostline run?"
+Name: "updates"; Description: "Tell me when a new version of Ghostline is out (asks GitHub once a day; nothing else is sent)"; GroupDescription: "Updates:"
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
 
 [Files]
@@ -53,6 +54,8 @@ Name: "{autodesktop}\Ghostline"; Filename: "{app}\Ghostline.exe"; Tasks: desktop
 [Run]
 Filename: "{app}\Ghostline.exe"; Parameters: "--set launch_with_game=1"; Tasks: withgame; Flags: runhidden waituntilterminated
 Filename: "{app}\Ghostline.exe"; Parameters: "--set launch_with_game=0"; Tasks: not withgame; Flags: runhidden waituntilterminated
+Filename: "{app}\Ghostline.exe"; Parameters: "--set check_updates=1"; Tasks: updates; Flags: runhidden waituntilterminated
+Filename: "{app}\Ghostline.exe"; Parameters: "--set check_updates=0"; Tasks: not updates; Flags: runhidden waituntilterminated
 Filename: "{app}\Ghostline.exe"; Description: "Open Ghostline now"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]

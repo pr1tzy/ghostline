@@ -115,7 +115,7 @@ APP_FILE = USER_CONFIG / "app.json"
 APP_DEFAULTS = {
     "launch_with_game": False,  # the in-game app starts Ghostline when you start a session: only if you said so
                                 # (the installer asks; the tray menu and References page can change it)
-    "check_updates": True,      # once a day, ask GitHub whether there's a newer release (nothing else is sent)
+    "check_updates": False,     # once a day, ask GitHub whether there's a newer release: only if you said so (installer)
 }
 
 
