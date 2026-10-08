@@ -9,6 +9,7 @@ Nothing here is needed to use Ghostline. It's for tweaking it, publishing it, or
 | `data/` | Everything recorded: `race.db` (SQLite), one `.npz` file per lap, `ghostline.log`. Back it up to keep your laps; delete it to start over. |
 | `config/tracks.json`, `config/cars.json` | Your overrides for corner names, track lengths, car names and classes. |
 | `config/site.json` | Only for publishing (see below). Not committed; copy `config/site.example.json`. |
+| `config/logger.json` | In-game logger settings (see below). Not committed. |
 | `samples/` | The sample laps loaded on first start. |
 
 ## Cars, tracks and corner names
@@ -39,10 +40,28 @@ shared memory (`GhostlineCars.v1`), the same way AC shares your own car. Ghostli
   each lap (valid or not, number of cuts), which Ghostline uses for other drivers' laps.
 - Without CSP, the Python `RaceLogger` does it. It stands down by itself while the Lua app is running.
 - Ghostline writes a heartbeat and a list of which cars need full detail (your car model or class) into
-  `GhostlineWant.v1`. The apps send only track positions for the other cars, and nothing at all when Ghostline
-  isn't running. Each car is sampled 20 times a second, spread over frames.
+  `GhostlineWant.v2`, along with the logger settings below. The apps send only track positions for the other cars,
+  and nothing at all when Ghostline isn't running. Each car is sampled 30 times a second by default, spread over
+  frames.
 - Both apps show what they cost per frame in their window.
 - Older versions of the app wrote CSV files and `live.json`; those are still picked up.
+
+## Logger settings
+
+`config/logger.json` (created the first time you change something; defaults are built in, see
+`config/logger.example.json`):
+
+| Setting | Default | What it does |
+|---------|---------|--------------|
+| `enabled` | `true` | The in-game app sends anything at all. |
+| `sample_hz` | `30` | How often the in-game app reads each car's position, speed and gear (5 to 60). |
+| `timing_hz` | `4` | How often it reads lap count, lap times and pit status (1 to 10). |
+| `live_hz` | `20` | How often Ghostline refreshes standings and the Live page map (2 to 30). The public site always gets 4. |
+| `detail` | `"class"` | Which cars get full detail, which ghost laps need: `"car"` (your car model), `"class"` or `"all"`. |
+
+Edit the file and the change applies within a second. With Custom Shaders Patch you can also change these in the
+Ghostline Logger window in the game: it asks Ghostline to save them to the same file. Between updates, the Live
+page moves every car at its current pace, so the map stays smooth even at low rates.
 
 ## How ghosts are kept fair
 

@@ -4,9 +4,10 @@
 #
 # Built to cost as little as possible inside the game's frame loop:
 # - no files, no text, no threads: one fixed binary block, written with struct.pack_into
-# - each car is sampled 20 times a second, spread over frames (a few cars per frame, never all at once)
+# - each car is sampled 30 times a second by default, spread over frames (a few cars per frame, never all at once)
 # - full detail (position, speed, gear) only for cars Ghostline asks for (your car / class); the rest get
-#   their track position only, plus lap times and pit status twice a second, names every 5 seconds
+#   their track position only, plus lap times and pit status 4 times a second, names every 5 seconds
+# - rates and on/off are set in Ghostline's config/logger.json (or the CSP app's window)
 # - idle when Ghostline isn't running, or when the CSP Lua version of this app (GhostlineLogger) is running
 # The window shows what it costs per frame.
 import ac
@@ -19,10 +20,11 @@ except ImportError:
     mmap = None
 
 APP = "RaceLogger"
-CARS, WANT = "GhostlineCars.v1", "GhostlineWant.v1"
-SIZE, WANT_SIZE, MAXC = 8672, 72, 64
-MAGIC, WANT_MAGIC = 0x314C4847, 0x31574847   # "GHL1", "GHW1"
-STEP, SLOW, NAMES, CHECK = 1.0 / 20, 0.5, 5.0, 1.0
+CARS, WANT = "GhostlineCars.v1", "GhostlineWant.v2"
+SIZE, WANT_SIZE, MAXC = 8672, 96, 64
+MAGIC, WANT_MAGIC = 0x314C4847, 0x32574847   # "GHL1", "GHW2"
+NAMES, CHECK = 5.0, 1.0
+step, slow, enabled = 1.0 / 30, 0.25, True   # sample / timing rates and on-off come from Ghostline (config/logger.json)
 
 # block layout (little-endian, naturally aligned; the Lua app and backend/carfeed.py use the same offsets)
 H_FRAME = struct.Struct("<IIIid")        # magic, version, seq, cars, sim clock      @0
@@ -88,19 +90,22 @@ def acMain(ac_version):
 
 def _check():
     """Once a second: is Ghostline reading (its heartbeat moves), and is the Lua app writing instead of us?"""
-    global active, last_beat, last_lua, beat_seen, lua_seen, want, status
+    global active, last_beat, last_lua, beat_seen, lua_seen, want, status, step, slow, enabled
     magic, beat = struct.unpack_from("<II", want_buf, 0)
     if magic == WANT_MAGIC and beat != last_beat:
         last_beat, beat_seen = beat, clock
         want = list(want_buf[8:8 + MAXC])
+        hz, timing, live, on = struct.unpack_from("<HHHB", want_buf, 72)
+        step, slow, enabled = 1.0 / max(hz, 1), 1.0 / max(timing, 1), bool(on)
     lua = F64.unpack_from(buf, 24)[0]
     if last_lua is not None and lua != last_lua:   # the Lua app counts up every frame
         lua_seen = clock
     last_lua = lua
     ghostline = clock - beat_seen < 3.0
     lua_running = clock - lua_seen < 2.0
-    active = ghostline and not lua_running
-    status = "CSP app is sending" if lua_running else "sending" if ghostline else "Ghostline not running"
+    active = ghostline and enabled and not lua_running
+    status = ("CSP app is sending" if lua_running else "paused in settings" if ghostline and not enabled
+              else "sending" if ghostline else "Ghostline not running")
 
 
 def _names(n):
@@ -111,7 +116,7 @@ def _names(n):
 
 def _sample(i):
     if clock >= slow_due[i]:   # things that change a few times per lap at most
-        slow_due[i] = clock + SLOW
+        slow_due[i] = clock + slow
         U8.pack_into(buf, O_CONN + i, 1 if ac.isConnected(i) else 0)
         U8.pack_into(buf, O_PIT + i, 1 if ac.isCarInPitline(i) else 0)
         I32.pack_into(buf, O_LAPS + 4 * i, ac.getCarState(i, CS.LapCount))
@@ -148,7 +153,7 @@ def acUpdate(dt):
                 names_due = clock + NAMES
                 _names(n)
                 H_INFO.pack_into(buf, 32, online, 1, track.encode("utf-8", "replace")[:59])
-            k = min(n, int(n * dt / STEP) + 1)              # enough cars per frame that each comes round every STEP
+            k = min(n, int(n * dt / step) + 1)              # enough cars per frame that each comes round every step
             for _ in range(k):
                 i = rr % n
                 rr = i + 1

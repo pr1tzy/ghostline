@@ -711,6 +711,28 @@ async function livePage(view) {
   const el = id => $('#' + id, view);
   const segs = $$('#rpm i', view);
   let mapRef, P = null, n = 0, cfAt = 0, standKey = '', topKey = '', recentKey = '';
+  // map dots move every frame: between updates each car carries on at its current pace (updates fix any drift)
+  const dots = new Map();
+  let raf = 0;
+  const draw = () => {
+    raf = requestAnimationFrame(draw);
+    if (!P) return;
+    const now = performance.now(), o = $('#others', view);
+    const at = f => P(Math.min(n - 1, Math.max(0, Math.floor((((f % 1) + 1) % 1) * (n - 1)))));
+    const pos = p => p.f + p.v * Math.min((now - p.at) / 1000, 1);
+    const put = (id, p) => { const d = $('#' + id, view); if (!d) return; if (!p) return d.setAttribute('opacity', 0); const [x, y] = at(pos(p)); d.setAttribute('cx', x); d.setAttribute('cy', y); d.setAttribute('opacity', 1); };
+    put('ldot', dots.get('me')); put('gdot', dots.get('ghost'));
+    if (!o) return;
+    const want = [...dots.entries()].filter(([k]) => k.startsWith('car:'));
+    if (o.childElementCount !== want.length) o.innerHTML = want.map(() => `<g><circle r="9" fill="${C.mute}"/><text fill="${C.mute}" font-family="Sligoil" font-size="22"></text></g>`).join('');
+    want.forEach(([, p], k) => {
+      const g = o.children[k], [x, y] = at(pos(p));
+      g.firstChild.setAttribute('cx', x); g.firstChild.setAttribute('cy', y);
+      g.lastChild.setAttribute('x', x + 12); g.lastChild.setAttribute('y', y - 10);
+      if (g.lastChild.textContent !== String(p.label)) g.lastChild.textContent = p.label;
+    });
+  };
+  draw();
   const bar = (fill, lab, d) => {
     const w = d == null ? 0 : Math.min(Math.abs(d), 2) * 25;
     el(lab).textContent = d == null ? '—' : sgn(d);
@@ -793,13 +815,22 @@ async function livePage(view) {
           <circle id="gdot" r="14" fill="${C.acc}" opacity="0"/><circle id="ldot" r="16" fill="${C.fg}" stroke="#0b0a0f" stroke-width="4"/>`;
       });
     }
-    if (P) {
-      const at = f => P(Math.min(n - 1, Math.max(0, Math.floor(f * (n - 1)))));
-      const put = (id, f) => { const d = $('#' + id, view); if (!d) return; if (f == null) return d.setAttribute('opacity', 0); const [x, y] = at(f); d.setAttribute('cx', x); d.setAttribute('cy', y); d.setAttribute('opacity', 1); };
-      put('ldot', s.pos); put('gdot', s.ghost_pos);
-      const o = $('#others', view);
-      if (o && st) o.innerHTML = st.filter(c => !c.me).map(c => { const [x, y] = at(c.spline); return `<g><circle cx="${x}" cy="${y}" r="9" fill="${C.mute}"/><text x="${x + 12}" y="${y - 10}" fill="${C.mute}" font-family="Sligoil" font-size="22">${c.pos}</text></g>`; }).join('');
-    }
+    // feed the smoother: where each car is now, and how fast it's going round (fraction of a lap per second)
+    const now = performance.now(), seen = new Set();
+    const feed = (key, f, label) => {
+      if (f == null) return;
+      seen.add(key);
+      const p = dots.get(key);
+      if (!p) return dots.set(key, { f, v: 0, at: now, label });
+      let df = f - p.f;
+      if (df < -0.5) df += 1;                         // crossed the line
+      const dt = (now - p.at) / 1000;
+      if (dt > 0.02) p.v = p.v ? p.v * 0.6 + Math.max(0, Math.min(0.05, df / dt)) * 0.4 : Math.max(0, Math.min(0.05, df / dt));
+      Object.assign(p, { f, at: now, label });
+    };
+    feed('me', s.pos); feed('ghost', s.ghost_pos);
+    (st || []).filter(c => !c.me).forEach(c => feed('car:' + c.name, c.spline, c.pos));
+    for (const k of dots.keys()) if (!seen.has(k)) dots.delete(k);
     // recorder
     el('rtoggle').firstChild.textContent = s.enabled ? 'Pause recorder' : 'Start recorder';
     const rk = JSON.stringify(s.recent || []);
@@ -807,7 +838,7 @@ async function livePage(view) {
   };
   bus.add(upd); upd(live);
   el('rtoggle').onclick = () => post('/recorder', { on: !live.enabled });
-  return () => bus.delete(upd);
+  return () => { bus.delete(upd); cancelAnimationFrame(raf); };
 }
 
 /* ---------- page: references ---------- */

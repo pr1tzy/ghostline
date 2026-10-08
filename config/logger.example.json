@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "sample_hz": 30,
+  "timing_hz": 4,
+  "live_hz": 20,
+  "detail": "class"
+}

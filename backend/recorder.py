@@ -10,7 +10,7 @@ from ctypes import wintypes
 
 import numpy as np
 
-from . import analysis, carfeed, content, ingest, store
+from . import analysis, carfeed, content, ingest, settings, store
 
 HZ = 60
 STATUS_LIVE, STATUS_PAUSE = 2, 3
@@ -127,7 +127,7 @@ class Standings:
 
     def read(self):
         now = time.time()
-        if now - self.last_read < 0.25:
+        if now - self.last_read < 1.0 / settings.logger()["live_hz"]:
             return self.data
         self.last_read = now
         raw = carfeed.feed.snapshot()

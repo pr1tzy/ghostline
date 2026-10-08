@@ -50,11 +50,17 @@ acsys.CS = CS
 sys.modules["ac"], sys.modules["acsys"] = ac, acsys
 labels = []
 
-from backend import carfeed, store  # noqa: E402
+from backend import carfeed, settings, store  # noqa: E402
+
+settings.LOGGER_FILE = Path(os.environ["RA_DATA"]) / "logger.json"   # never touch the real config
+# own shared-memory names: never read from, or write into, a Ghostline that's running on this PC
+SUFFIX = f".test{os.getpid()}"
+carfeed.CARS, carfeed.WANT, carfeed.SET = (carfeed.CARS + SUFFIX, carfeed.WANT + SUFFIX, carfeed.SET + SUFFIX)
 
 spec = importlib.util.spec_from_file_location("RaceLogger", ROOT / "ac_app" / "RaceLogger" / "RaceLogger.py")
 app = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(app)
+app.CARS, app.WANT = app.CARS + SUFFIX, app.WANT + SUFFIX
 app.acMain("1.16")
 feed = carfeed.CarFeed()
 feed.player_car = MINE
@@ -98,8 +104,17 @@ assert snap and len(snap["cars"]) == N and snap["track"] == "monza", snap and le
 c = next(x for x in snap["cars"] if x["i"] == 3)
 assert c["name"] == "Driver 3" and c["car"] == OTHER and 0 <= c["spline"] <= 1
 
-# 3. the CSP Lua app starts sending: the Python app stands down
+# 3. a settings change from the CSP app's window: saved to logger.json, sent back out, picked up by the app
+import mmap  # noqa: E402
 import struct  # noqa: E402
+req = mmap.mmap(-1, carfeed.SET_SIZE, tagname="GhostlineSettings.v1" + SUFFIX)
+struct.pack_into("<IIHHHBB", req, 0, carfeed.SET_MAGIC, 7, 45, 6, 25, 1, 2)
+run(3, with_feed=True)
+saved = settings.logger()
+assert saved == {"enabled": True, "sample_hz": 45, "timing_hz": 6, "live_hz": 25, "detail": "all"}, saved
+assert settings.LOGGER_FILE.exists() and abs(app.step - 1 / 45) < 1e-9 and abs(app.slow - 1 / 6) < 1e-9, (app.step, app.slow)
+
+# 3. the CSP Lua app starts sending: the Python app stands down
 for k in range(1, 4 * FPS):
     struct.pack_into("<d", app.buf, 24, float(k))   # what GhostlineLogger.lua does every frame
     sim["t"] += dt

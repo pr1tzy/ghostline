@@ -47,6 +47,9 @@ are plain text, so you can open them in Notepad to see what they do.
 - Don't want a console window? Use `ghostline.vbs` to start it hidden and `stop.bat` to stop it.
   `autostart.bat` starts it hidden every time you log in to Windows (`autostart.bat off` undoes that).
 - The site lives at http://127.0.0.1:8765. Put the **Live** page on a second monitor while you race.
+- Logger settings (how often cars are sampled, which cars, on/off) are in `config/logger.json`, or in the
+  Ghostline Logger window in the game if you have Custom Shaders Patch. See
+  [docs/advanced.md](docs/advanced.md#logger-settings).
 - For ghosts, race online (or against the AI) with the in-game app running. Ghostline installs it into AC for you;
   restart your AC session once after the first start.
 
@@ -99,6 +102,8 @@ Double-click `uninstall.bat`. It removes the in-game app from AC and the autosta
 Still stuck? [Open an issue](https://github.com/pr1tzy/ghostline/issues) with the log.
 
 ## More
+
+- [CHANGELOG.md](CHANGELOG.md): what changed in each version.
 
 - [docs/advanced.md](docs/advanced.md): settings, renaming corners, publishing online, the security model, and
   working on the code.

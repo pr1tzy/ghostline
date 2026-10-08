@@ -2,9 +2,11 @@
 or GhostlineLogger in CSP Lua) and does everything the app used to do inside the game: lap detection, saving
 ghost laps, and the snapshot behind the Live standings.
 
-Also writes "GhostlineWant.v1": a heartbeat (so the in-game app knows someone is listening and idles otherwise)
-and which cars need full detail (your car model or class); the rest only send their track position.
-Block layout: see ac_app/GhostlineLogger/GhostlineLogger.lua (ghl_cars / ghl_want).
+Also writes "GhostlineWant.v2": a heartbeat (so the in-game app knows someone is listening and idles otherwise),
+which cars need full detail (your car model or class; the rest only send their track position), and the logger
+settings from config/logger.json. The CSP app's window can change those settings: it writes a request into
+"GhostlineSettings.v1", which is saved to config/logger.json and sent back out.
+Block layouts: see ac_app/GhostlineLogger/GhostlineLogger.lua (ghl_cars / ghl_want / ghl_settings).
 """
 import ctypes
 import json
@@ -14,11 +16,11 @@ from ctypes import wintypes
 
 import numpy as np
 
-from . import ingest, store
+from . import ingest, settings, store
 
-CARS, WANT = "Local\\GhostlineCars.v1", "Local\\GhostlineWant.v1"
-SIZE, WANT_SIZE, MAXC = 8672, 72, 64
-MAGIC, WANT_MAGIC = 0x314C4847, 0x31574847
+CARS, WANT, SET = "Local\\GhostlineCars.v1", "Local\\GhostlineWant.v2", "Local\\GhostlineSettings.v1"
+SIZE, WANT_SIZE, SET_SIZE, MAXC = 8672, 96, 16, 64
+MAGIC, WANT_MAGIC, SET_MAGIC = 0x314C4847, 0x32574847, 0x31534847   # "GHL1", "GHW2", "GHS1"
 POLL, ROW_EVERY, MAX_ROWS = 0.01, 0.045, 20 * 600   # read 100 times a second, keep ~20 samples a second per car
 SETTLE = 1.0          # wait this long after a car crosses the line, so the game's own lap verdict has arrived
 COLS = ("t", "pos", "speed", "x", "z", "gear")
@@ -49,8 +51,9 @@ class CarFeed(threading.Thread):
     def __init__(self):
         super().__init__(daemon=True)
         self.player_car = None     # set by the recorder: decides which cars need full detail
-        self.cars_addr = self.want_addr = None
-        self._want_h = self._cars_h = None
+        self.cars_addr = self.want_addr = self.set_addr = None
+        self._want_h = self._cars_h = self._set_h = None
+        self.set_rev, self.settings_rev = None, 1
         self.beat, self.next_want, self.next_open = 0, 0.0, 0.0
         self.seq, self.seq_since = None, 0.0
         self.st, self.pending = {}, []
@@ -62,6 +65,25 @@ class CarFeed(threading.Thread):
         h = _k32.CreateFileMappingW(INVALID_HANDLE, None, PAGE_READWRITE, 0, WANT_SIZE, WANT)
         if h:
             self._want_h, self.want_addr = h, _k32.MapViewOfFile(h, FILE_MAP_WRITE, 0, 0, WANT_SIZE)
+        h = _k32.CreateFileMappingW(INVALID_HANDLE, None, PAGE_READWRITE, 0, SET_SIZE, SET)
+        if h:
+            self._set_h, self.set_addr = h, _k32.MapViewOfFile(h, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, SET_SIZE)
+
+    def _settings_request(self):
+        """A change made in the CSP app's window: save it to config/logger.json. Requests from before Ghostline started are ignored."""
+        if not self.set_addr:
+            return
+        raw = ctypes.string_at(self.set_addr, SET_SIZE)
+        magic, rev = int.from_bytes(raw[0:4], "little"), int.from_bytes(raw[4:8], "little")
+        if self.set_rev is None or magic != SET_MAGIC:
+            self.set_rev = rev
+            return
+        if rev != self.set_rev:
+            self.set_rev = rev
+            hz, timing, live = (int.from_bytes(raw[k:k + 2], "little") for k in (8, 10, 12))
+            settings.save_logger({"sample_hz": hz, "timing_hz": timing, "live_hz": live, "enabled": bool(raw[14]),
+                                  "detail": settings.DETAILS[raw[15]] if raw[15] < len(settings.DETAILS) else "class"})
+            self.settings_rev += 1
 
     def _open_cars(self):
         h = _k32.OpenFileMappingW(FILE_MAP_READ, False, CARS)   # the in-game app creates it; never create it here
@@ -69,13 +91,19 @@ class CarFeed(threading.Thread):
             self._cars_h, self.cars_addr = h, _k32.MapViewOfFile(h, FILE_MAP_READ, 0, 0, SIZE)
 
     def _write_want(self, names):
-        mine = self.player_car
+        self._settings_request()
+        cfg = settings.logger()
+        mine, mode = self.player_car, cfg["detail"]
         cls = store.car_info(mine)["class"] if mine else None
         want = bytearray(MAXC)
         for i, car in enumerate(names):
-            want[i] = int(i > 0 and (mine is None or car == mine or (car and store.car_info(car)["class"] == cls)))
+            want[i] = int(i > 0 and (mine is None or mode == "all" or car == mine or
+                                     (mode == "class" and car and store.car_info(car)["class"] == cls)))
         self.beat = (self.beat + 1) & 0xFFFFFFFF
-        data = MAGIC_W + self.beat.to_bytes(4, "little") + bytes(want)
+        data = (MAGIC_W + self.beat.to_bytes(4, "little") + bytes(want)
+                + b"".join(cfg[k].to_bytes(2, "little") for k in ("sample_hz", "timing_hz", "live_hz"))
+                + bytes([int(cfg["enabled"]), settings.DETAILS.index(cfg["detail"])])
+                + self.settings_rev.to_bytes(4, "little"))
         ctypes.memmove(self.want_addr, data, len(data))
 
     def _read(self):
@@ -128,7 +156,7 @@ class CarFeed(threading.Thread):
             if f["connected"][i]:
                 self._car(i, f, drivers[i], names[i], track, online, writer, now)
         self._finish_due(f, writer, now)
-        if now - self.snap_at >= 0.25:
+        if now - self.snap_at >= 1.0 / settings.logger()["live_hz"]:
             self.snap_at = now
             self.snap = {"t": now, "track": track, "cars": [
                 {"i": i, "name": drivers[i], "car": names[i], "spline": round(float(f["spline"][i]), 5), "laps": int(f["laps"][i]),

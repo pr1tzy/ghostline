@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel, Field
 
-from . import analysis, content, ingest, settings, share, store
+from . import __version__, analysis, content, ingest, settings, share, store
 
 for _ext, _type in ((".otf", "font/otf"), (".woff2", "font/woff2"), (".svg", "image/svg+xml"), (".js", "text/javascript")):
     mimetypes.add_type(_type, _ext)
@@ -97,7 +97,7 @@ def state(request: Request):
                       (g["car"], g["track"]))[0]["m"]
         groups.append({**_lap_out(g), "best_id": ids[0], "ideal": analysis.ideal(ids), "ref_best": ref})
     total = store.q("SELECT COUNT(*) n FROM laps")[0]["n"]
-    return {"admin": admin, "groups": groups, "total": total, "samples": store.sample_count(),
+    return {"admin": admin, "version": __version__, "groups": groups, "total": total, "samples": store.sample_count(),
             "app": ingest.app_status() if admin else None,
             "recorder": recorder.state, "latest_best": groups[0]["best_id"] if groups else None}
 
@@ -313,7 +313,7 @@ async def live(request: Request):
             while not await request.is_disconnected():
                 s = recorder.state if admin else _public_live(recorder.state)
                 yield f"data: {json.dumps(s)}\n\n"
-                await asyncio.sleep(0.1 if admin else 0.25)
+                await asyncio.sleep(1.0 / settings.logger()["live_hz"] if admin else 0.25)   # public: 4 a second, the page smooths it
         finally:
             _streams -= not admin
     return StreamingResponse(gen(), media_type="text/event-stream",
@@ -343,6 +343,7 @@ def index(page="", status=200):
     html = re.sub(r'(href|src)="(/(?:css|js|vendor)/[^"?]+)"', rf'\1="\2?v={v}"', (FRONT / "index.html").read_text(encoding="utf-8"))
     if PUBLIC_HOST:   # link previews need absolute URLs
         html = re.sub(r'(<meta (?:property|name)="(?:og:url|og:image|twitter:image)" content=")/', rf"\1https://{PUBLIC_HOST}/", html)
+    html = html.replace("{{version}}", __version__)
     if settings.CREDIT_NAME:
         html = re.sub(r'<a class="mono credit"[^>]*>.*?</a>', lambda m: f'<a class="mono credit" href="{escape(settings.CREDIT_URL or settings.REPO_URL)}" '
                       f'target="_blank" rel="noopener" data-hover>Built by {escape(settings.CREDIT_NAME)} &#8599;</a>', html)

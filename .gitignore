@@ -13,3 +13,4 @@ cloudflared/*.yml
 !cloudflared/*.example.yml
 ai_slop_to_avoid.md
 PLAN.md
+config/logger.json

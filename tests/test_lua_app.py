@@ -38,7 +38,10 @@ ac = {
   end,
   onLapCompleted = function(i, cb) lapCb = cb end,
 }
-ui = { text = function(s) lastText = s end }
+ui = { text = function(s) lastText = s end, separator = function() end, sameLine = function() end,
+       checkbox = function(label, v) return false end,
+       radioButton = function(label, on) return label == 'all cars' and not on end,
+       slider = function(label, v, lo, hi) if label == '##sample' then return 50, true end return v, false end }
 local clock0 = 0
 os.preciseClock = function() clock0 = clock0 + 0.000001; return clock0 end
 script = {}
@@ -51,10 +54,11 @@ for step in range(1, 400):
     g.sim.t = step / 60.0
     if step == 1 or step % 60 == 0:   # write heartbeat like carfeed does
         lua.execute("""
-        local b = blocks['GhostlineWant.v1']
+        local b = blocks['GhostlineWant.v2']
         if b then
-          local w = ffi.cast('uint32_t*', b.buf); w[0] = 0x31574847; w[1] = w[1] + 1
-          for i = 9, 71 do b.buf[i] = 1 end
+          local w = ffi.cast('ghl_want*', b.buf); w.magic = 0x32574847; w.beat = w.beat + 1
+          for i = 1, 63 do w.want[i] = 1 end
+          w.sampleHz, w.timingHz, w.liveHz, w.enabled, w.detail = 30, 4, 20, 1, 1
         end""")
     g.script.update(1 / 60.0)
 g.lapCb(3, 81234, False, 2, 7)    # the game says car 3's lap 7 was invalid, 2 cuts
@@ -75,5 +79,8 @@ for i in range(N):
         assert f["speed"][i] > 250 and f["gear"][i] == 5 and (f["x"][i] or f["z"][i])
 assert f["x"][0] == 0 and f["speed"][0] == 0, "car 0 (you) is recorded by Ghostline itself"
 assert f["lap_valid"][3] == 0 and f["lap_cuts"][3] == 2 and f["valid_lap"][3] == 7
-g.script.windowMain(0)
+g.script.windowMain(0)   # the window: the fake moves the sample slider to 50 and picks "all cars"
+sreq = bytes(lua.eval("ffi.string(blocks['GhostlineSettings.v1'].buf, 16)"))
+magic, rev, hz, timing, live, on, detail = np.frombuffer(sreq[:8], "<u4").tolist() + np.frombuffer(sreq[8:14], "<u2").tolist() + [sreq[14], sreq[15]]
+assert magic == carfeed.SET_MAGIC and rev == 1 and (hz, timing, live, on, detail) == (50, 4, 20, 1, 2), (magic, rev, hz, timing, live, on, detail)
 print("lua app ok, window:", g.lastText.decode())

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import uvicorn
 
-from backend import carfeed, ingest, settings
+from backend import __version__, carfeed, ingest, settings
 from backend.app import PORT, app
 from backend.recorder import recorder
 
@@ -65,7 +65,7 @@ if __name__ == "__main__":
     tunnel = start_tunnel()
     if settings.TUNNEL:
         print("Public site:", tunnel)
-    print(f"\nGhostline is running at {url}\nKeep this window open while you drive. Close it to stop.\n")
+    print(f"\nGhostline {__version__} is running at {url}\nKeep this window open while you drive. Close it to stop.\n")
     if "--no-browser" not in sys.argv:
         threading.Timer(1.5, webbrowser.open, (url,)).start()
     uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning", proxy_headers=False, server_header=False)
