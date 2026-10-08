@@ -86,7 +86,8 @@ def package():
 
 def sums():
     files = [f for f in sorted(OUT.iterdir()) if f.is_file() and f.name != "SHA256SUMS.txt"]
-    (OUT / "SHA256SUMS.txt").write_text("".join(f"{hashlib.sha256(f.read_bytes()).hexdigest()}  {f.name}\n" for f in files))
+    lines = "".join(f"{hashlib.sha256(f.read_bytes()).hexdigest()}  {f.name}\n" for f in files)
+    (OUT / "SHA256SUMS.txt").write_bytes(lines.encode())   # plain \n endings, so `sha256sum -c` works everywhere
 
 
 def main():
