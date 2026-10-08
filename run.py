@@ -10,7 +10,7 @@ from pathlib import Path
 
 import uvicorn
 
-from backend import ingest, settings
+from backend import carfeed, ingest, settings
 from backend.app import PORT, app
 from backend.recorder import recorder
 
@@ -60,6 +60,7 @@ if __name__ == "__main__":
     else:
         print("Assetto Corsa not found through Steam. Open the References page for help.")
     recorder.start()
+    carfeed.feed.start()
     ingest.Watcher().start()
     tunnel = start_tunnel()
     if settings.TUNNEL:

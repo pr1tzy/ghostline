@@ -10,7 +10,7 @@ from ctypes import wintypes
 
 import numpy as np
 
-from . import analysis, content, ingest, store
+from . import analysis, carfeed, content, ingest, store
 
 HZ = 60
 STATUS_LIVE, STATUS_PAUSE = 2, 3
@@ -120,7 +120,7 @@ def _arr(a, lo, hi, nd=1):
 
 
 class Standings:
-    """Reads the in-game app's live.json (every car's track position) and works out order and gaps."""
+    """Every car's track position (from the car feed, or the old app's live.json) -> order and gaps."""
 
     def __init__(self):
         self.hist, self.last_read, self.data = {}, 0.0, None
@@ -130,11 +130,13 @@ class Standings:
         if now - self.last_read < 0.25:
             return self.data
         self.last_read = now
-        d = ingest.app_dir()
-        try:
-            raw = json.loads((d / "live.json").read_text(encoding="utf-8")) if d else None
-        except (OSError, ValueError):
-            return self.data
+        raw = carfeed.feed.snapshot()
+        if raw is None:   # an older RaceLogger that still writes live.json
+            d = ingest.app_dir()
+            try:
+                raw = json.loads((d / "live.json").read_text(encoding="utf-8")) if d else None
+            except (OSError, ValueError):
+                return self.data
         if not raw or now - raw.get("t", 0) > 5:
             self.data = None
             return None
@@ -267,6 +269,7 @@ class Recorder(threading.Thread):
                 continue
             if car is None or last_laps is None or g.completedLaps < last_laps:
                 car, track, driver = self._info(stat.read())
+                carfeed.feed.player_car = car   # full detail only for cars that can be your ghost
                 self._refresh_ref(car, track)
                 rows, recording, sess_best_sectors, fuel_hist = [], False, {}, []
             pos = g.normalizedCarPosition

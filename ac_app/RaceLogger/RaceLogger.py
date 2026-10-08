@@ -1,225 +1,169 @@
 # RaceLogger - Assetto Corsa in-game app (Python 3.3).
-# Logs every other car in the session (online drivers or AI) to logs/*.csv, one file per completed lap, and
-# writes live.json (every car's position) for the standings on the Live page. Your own car is recorded by
-# the website itself, straight from the game's shared memory.
+# Copies every car's position, speed and lap times into shared memory ("GhostlineCars.v1"). Ghostline reads it
+# from outside the game and does all the work there: lap detection, saving ghost laps, standings and gaps.
 #
-# Kept light on purpose, because it runs inside the game's frame loop:
-# - no disk access on the game thread: a background thread does every write (disk and antivirus scans can stall)
-# - one pass over the cars per tick, names cached, no json import, each error logged once
+# Built to cost as little as possible inside the game's frame loop:
+# - no files, no text, no threads: one fixed binary block, written with struct.pack_into
+# - each car is sampled 20 times a second, spread over frames (a few cars per frame, never all at once)
+# - full detail (position, speed, gear) only for cars Ghostline asks for (your car / class); the rest get
+#   their track position only, plus lap times and pit status twice a second, names every 5 seconds
+# - idle when Ghostline isn't running, or when the CSP Lua version of this app (GhostlineLogger) is running
+# The window shows what it costs per frame.
 import ac
 import acsys
-import os
+import struct
 import time
 try:
-    import threading
-    import queue
-except ImportError:   # no threads: fall back to writing directly
-    threading = queue = None
+    import mmap
+except ImportError:
+    mmap = None
 
 APP = "RaceLogger"
-HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, "logs")
-LIVE = os.path.join(HERE, "live.json")
-STEP = 1.0 / 20       # car samples: 20 per second
-LIVE_EVERY = 0.25     # live.json: 4 per second
-NAMES_EVERY = 5.0     # driver / car names barely change: refresh every 5 s
-MAX_ROWS = 20 * 600   # give up on a "lap" longer than 10 minutes (parked, stuck, AFK)
+CARS, WANT = "GhostlineCars.v1", "GhostlineWant.v1"
+SIZE, WANT_SIZE, MAXC = 8672, 72, 64
+MAGIC, WANT_MAGIC = 0x314C4847, 0x31574847   # "GHL1", "GHW1"
+STEP, SLOW, NAMES, CHECK = 1.0 / 20, 0.5, 5.0, 1.0
 
-cars = {}     # car index -> lap being logged
-names = {}    # car index -> (driver, car model)
-clock = since = live_since = names_since = 0.0
-saved = 0
+# block layout (little-endian, naturally aligned; the Lua app and backend/carfeed.py use the same offsets)
+H_FRAME = struct.Struct("<IIIid")        # magic, version, seq, cars, sim clock      @0
+H_SEQ = struct.Struct("<I")              # seq                                       @8
+H_INFO = struct.Struct("<BB2x60s")       # online, writer, track                      @32
+O_CONN, O_PIT, O_GEAR, O_LAPS, O_LAST, O_BEST = 96, 160, 352, 480, 992, 1248
+O_SPLINE, O_X, O_Z, O_SPEED, O_T, O_DRIVER, O_CAR = 1504, 1760, 2016, 2272, 2528, 3040, 5600
+U8, I16, I32, F32, F64 = struct.Struct("<B"), struct.Struct("<h"), struct.Struct("<i"), struct.Struct("<f"), struct.Struct("<d")
+S40, S48 = struct.Struct("<40s"), struct.Struct("<48s")
+CS = acsys.CS
+
+buf = want_buf = None
 label = None
 track = ""
-source = "ai"
+online = 0
+clock = 0.0
+seq = 0
+rr = 0                       # round-robin pointer: next car to sample
+slow_due = [0.0] * MAXC
+names_due = 0.0
+check_due = 0.0
+want = [1] * MAXC
+active = False               # Ghostline is reading and no Lua writer is running
+last_beat = last_lua = None
+beat_seen = lua_seen = -1e9
+perf_sum = perf_max = 0.0
+perf_n = 0
+perf_due = 2.0
 logged = set()
-writer = None
+status = "waiting"
 
 
 def _log(e):
     msg = "RaceLogger: " + str(e)
-    if msg not in logged:   # ac.log writes to disk too: say each thing once
+    if msg not in logged:
         logged.add(msg)
         ac.log(msg)
 
 
-def _write(path, text, atomic):
-    tmp = path + ".tmp" if atomic else path
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(text)
-    if atomic:   # lap files: the website only picks up *.csv, so it never sees half a file
-        os.replace(tmp, path)
-
-
-class Writer(threading.Thread if threading else object):
-    """Does all file writing off the game thread. The newest live.json wins; lap files are written in order."""
-
-    def __init__(self):
-        threading.Thread.__init__(self)
-        self.daemon = True
-        self.q = queue.Queue()
-        self.live = None
-
-    def run(self):
-        last = None
-        while True:
-            try:
-                path, text = self.q.get(timeout=LIVE_EVERY)
-                _write(path, text, True)
-            except queue.Empty:
-                pass
-            except Exception as e:
-                _log(e)
-            live = self.live
-            if live is not None and live is not last:
-                last = live
-                try:
-                    _write(LIVE, live, False)
-                except Exception:
-                    pass   # the website is reading it right now; the next one is 0.25 s away
-
-
-def _file(path, text):
-    if writer:
-        writer.q.put((path, text))
-    else:
-        _write(path, text, True)
-
-
-def _str(s):
-    return '"' + "".join(c if c not in '"\\' and ord(c) >= 32 else " " for c in str(s)) + '"'
-
-
 def acMain(ac_version):
-    global label, track, source, writer
+    global label, track, online, buf, want_buf
     win = ac.newApp(APP)
-    ac.setSize(win, 210, 54)
-    label = ac.addLabel(win, "RaceLogger: waiting")
+    ac.setSize(win, 260, 54)
+    label = ac.addLabel(win, "Ghostline: waiting")
     ac.setPosition(label, 8, 28)
-    if not os.path.isdir(OUT):
-        os.makedirs(OUT)
     cfg = ac.getTrackConfiguration(0)
     track = ac.getTrackName(0) + ("-" + cfg if cfg else "")
     try:
-        source = "online" if ac.getServerName() else "ai"
+        online = 1 if ac.getServerName() else 0
     except Exception:
-        source = "ai"
-    if threading:
-        try:
-            writer = Writer()
-            writer.start()
-        except Exception as e:
-            writer = None
-            _log(e)
+        online = 0
+    if mmap is None:
+        ac.setText(label, "Ghostline: no shared memory here")
+        return APP
+    try:
+        buf = mmap.mmap(-1, SIZE, tagname=CARS)
+        want_buf = mmap.mmap(-1, WANT_SIZE, tagname=WANT)
+    except Exception as e:
+        buf = None
+        _log(e)
     return APP
 
 
-def acShutdown():
-    """Session over: write whatever laps are still queued before the game unloads the app."""
-    if not writer:
-        return
-    while True:
-        try:
-            path, text = writer.q.get_nowait()
-            _write(path, text, True)
-        except Exception:
-            break
+def _check():
+    """Once a second: is Ghostline reading (its heartbeat moves), and is the Lua app writing instead of us?"""
+    global active, last_beat, last_lua, beat_seen, lua_seen, want, status
+    magic, beat = struct.unpack_from("<II", want_buf, 0)
+    if magic == WANT_MAGIC and beat != last_beat:
+        last_beat, beat_seen = beat, clock
+        want = list(want_buf[8:8 + MAXC])
+    lua = F64.unpack_from(buf, 24)[0]
+    if last_lua is not None and lua != last_lua:   # the Lua app counts up every frame
+        lua_seen = clock
+    last_lua = lua
+    ghostline = clock - beat_seen < 3.0
+    lua_running = clock - lua_seen < 2.0
+    active = ghostline and not lua_running
+    status = "CSP app is sending" if lua_running else "sending" if ghostline else "Ghostline not running"
 
 
-def _name(i):
-    n = names.get(i)
-    if n is None:
-        n = names[i] = (ac.getDriverName(i), ac.getCarName(i))
-    return n
+def _names(n):
+    for i in range(n):
+        S40.pack_into(buf, O_DRIVER + 40 * i, ac.getDriverName(i).encode("utf-8", "replace")[:39])
+        S48.pack_into(buf, O_CAR + 48 * i, ac.getCarName(i).encode("utf-8", "replace")[:47])
 
 
-def _clean(s):
-    return "".join(ch if ch.isalnum() else "_" for ch in s)[:24]
-
-
-def _save(i, c, lap_s):
-    global saved
-    if c["pit"] or len(c["rows"]) < 100 or lap_s < 20:
-        return
-    driver, car = _name(i)
-    name = "%s_%s_%s_%d.csv" % (time.strftime("%Y%m%d_%H%M%S"), _clean(car), _clean(driver), int(lap_s * 1000))
-    head = ["# car=" + car, "# track=" + track, "# driver=" + driver, "# source=" + source,
-            "# lap_ms=%d" % int(lap_s * 1000), "# valid=1", "t,pos,speed,x,z,gear"]
-    _file(os.path.join(OUT, name), "\n".join(head + c["rows"]))
-    saved += 1
-    ac.setText(label, "RaceLogger: %d laps saved" % saved)
-
-
-def _sample(i, pos):
-    c = cars.get(i)
-    if c is None:
-        cars[i] = {"rows": None, "last": pos, "tp": clock, "start": 0.0, "pit": False, "n": 0}
-        return
-    if c["last"] > 0.9 and pos < 0.1:   # crossed the line: interpolate the exact moment
-        span = (1.0 - c["last"]) + pos
-        cross = c["tp"] + (clock - c["tp"]) * ((1.0 - c["last"]) / span if span > 0 else 1.0)
-        if c["rows"] is not None:
-            _save(i, c, cross - c["start"])
-        c["rows"], c["start"], c["pit"] = [], cross, False
-    elif c["rows"] is not None and pos < c["last"] - 0.05:
-        c["rows"] = None   # reset / back to pits
-    c["last"], c["tp"] = pos, clock
-    rows = c["rows"]
-    if rows is None:
-        return
-    if len(rows) > MAX_ROWS:
-        c["rows"] = None
-        return
-    c["n"] += 1
-    if c["n"] % 10 == 0 and ac.isCarInPitline(i):   # twice a second is plenty for the pit lane
-        c["pit"] = True
-    x, y, z = ac.getCarState(i, acsys.CS.WorldPosition)
-    rows.append("%.3f,%.6f,%.2f,%.2f,%.2f,%d" % (clock - c["start"], pos, ac.getCarState(i, acsys.CS.SpeedKMH),
-                                                 x, z, ac.getCarState(i, acsys.CS.Gear) - 1))
-
-
-def _live(i, pos):
-    driver, car = _name(i)
-    return '{"i":%d,"name":%s,"car":%s,"spline":%.5f,"laps":%d,"last":%d,"best":%d,"pit":%s,"speed":%d}' % (
-        i, _str(driver), _str(car), pos, ac.getCarState(i, acsys.CS.LapCount), ac.getCarState(i, acsys.CS.LastLap),
-        ac.getCarState(i, acsys.CS.BestLap), "true" if ac.isCarInPitline(i) else "false",
-        int(ac.getCarState(i, acsys.CS.SpeedKMH)))
+def _sample(i):
+    if clock >= slow_due[i]:   # things that change a few times per lap at most
+        slow_due[i] = clock + SLOW
+        U8.pack_into(buf, O_CONN + i, 1 if ac.isConnected(i) else 0)
+        U8.pack_into(buf, O_PIT + i, 1 if ac.isCarInPitline(i) else 0)
+        I32.pack_into(buf, O_LAPS + 4 * i, ac.getCarState(i, CS.LapCount))
+        I32.pack_into(buf, O_LAST + 4 * i, ac.getCarState(i, CS.LastLap))
+        I32.pack_into(buf, O_BEST + 4 * i, ac.getCarState(i, CS.BestLap))
+    F32.pack_into(buf, O_SPLINE + 4 * i, ac.getCarState(i, CS.NormalizedSplinePosition))
+    if want[i]:
+        x, y, z = ac.getCarState(i, CS.WorldPosition)
+        F32.pack_into(buf, O_X + 4 * i, x)
+        F32.pack_into(buf, O_Z + 4 * i, z)
+        F32.pack_into(buf, O_SPEED + 4 * i, ac.getCarState(i, CS.SpeedKMH))
+        I16.pack_into(buf, O_GEAR + 2 * i, ac.getCarState(i, CS.Gear) - 1)
+    F64.pack_into(buf, O_T + 8 * i, clock)
 
 
 def acUpdate(dt):
-    global clock, since, live_since, names_since
+    global clock, seq, rr, names_due, check_due, perf_sum, perf_max, perf_n, perf_due
     clock += dt
-    since += dt
-    live_since += dt
-    names_since += dt
-    if since < STEP:
+    if buf is None:
         return
-    since = 0.0
-    if names_since >= NAMES_EVERY:   # someone may have joined or left
-        names_since = 0.0
-        names.clear()
-    live = live_since >= LIVE_EVERY
-    out = []
-    if live:
-        live_since = 0.0
-    for i in range(ac.getCarsCount()):   # one pass: sample the other cars, collect everyone for live.json
+    t0 = time.perf_counter()
+    if clock >= check_due:
+        check_due = clock + CHECK
         try:
-            if not ac.isConnected(i):
-                cars.pop(i, None)
-                continue
-            pos = ac.getCarState(i, acsys.CS.NormalizedSplinePosition)
-            if i:
-                _sample(i, pos)
-            if live:
-                out.append(_live(i, pos))
+            _check()
         except Exception as e:
             _log(e)
-    if live:
-        text = '{"t":%.3f,"track":%s,"cars":[%s]}' % (time.time(), _str(track), ",".join(out))
-        if writer:
-            writer.live = text
-        else:
-            try:
-                _write(LIVE, text, False)
-            except Exception:
-                pass
+    if active:
+        n = min(ac.getCarsCount(), MAXC)
+        seq += 1
+        H_SEQ.pack_into(buf, 8, seq)                       # odd: a write is in progress
+        try:
+            if clock >= names_due:
+                names_due = clock + NAMES
+                _names(n)
+                H_INFO.pack_into(buf, 32, online, 1, track.encode("utf-8", "replace")[:59])
+            k = min(n, int(n * dt / STEP) + 1)              # enough cars per frame that each comes round every STEP
+            for _ in range(k):
+                i = rr % n
+                rr = i + 1
+                _sample(i)
+        except Exception as e:
+            _log(e)
+        seq += 1
+        H_FRAME.pack_into(buf, 0, MAGIC, 1, seq, n, clock)  # even: consistent again
+    cost = (time.perf_counter() - t0) * 1000
+    perf_sum += cost
+    perf_n += 1
+    if cost > perf_max:
+        perf_max = cost
+    if clock >= perf_due:   # what this costs the game, so it can be checked in a real session
+        perf_due = clock + 2.0
+        ac.setText(label, "Ghostline %s | %.3f ms avg, %.2f max" % (status, perf_sum / perf_n, perf_max))
+        perf_sum = perf_max = 0.0
+        perf_n = 0

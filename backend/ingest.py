@@ -14,6 +14,7 @@ import numpy as np
 from . import analysis, content, store
 
 APP_SRC = store.ROOT / "ac_app" / "RaceLogger"
+LUA_SRC = store.ROOT / "ac_app" / "GhostlineLogger"   # CSP Lua version: installed when Custom Shaders Patch is there
 F1_TRACKS = {"monza": "monza", "spa-francorchamps": "spa", "silverstone": "ks_silverstone-gp", "imola": "imola",
              "barcelona": "ks_barcelona-layout_gp", "spielberg": "ks_red_bull_ring-layout_gp", "zandvoort": "ks_zandvoort"}
 
@@ -52,13 +53,24 @@ def app_dir():
     return ac / "apps" / "python" / "RaceLogger" if ac else None
 
 
+def lua_dir():
+    ac = find_ac()
+    return ac / "apps" / "lua" / "GhostlineLogger" if ac and (ac / "extension").is_dir() else None
+
+
+def _same(a, b):
+    return a.exists() and filecmp.cmp(a, b, shallow=False)
+
+
 def app_status():
-    d = app_dir()
+    d, ld = app_dir(), lua_dir()
     installed = bool(d and (d / "RaceLogger.py").exists())
-    current = installed and filecmp.cmp(d / "RaceLogger.py", APP_SRC / "RaceLogger.py", shallow=False)
+    current = installed and _same(d / "RaceLogger.py", APP_SRC / "RaceLogger.py") and \
+        (ld is None or all(_same(ld / f.name, f) for f in LUA_SRC.iterdir()))
     ini = documents() / "Assetto Corsa" / "cfg" / "python.ini"
     active = ini.exists() and re.search(r"\[RACELOGGER\]\s*ACTIVE\s*=\s*1", ini.read_text(errors="ignore"), re.I) is not None
     return {"ac_path": str(find_ac() or ""), "installed": installed, "current": bool(current), "active": active,
+            "csp": bool(ld), "lua": bool(ld and (ld / "GhostlineLogger.lua").exists()),
             "logs": str(d / "logs") if d else "", "inbox": str(store.INBOX)}
 
 
@@ -68,6 +80,10 @@ def install_app():
         raise RuntimeError("Assetto Corsa folder not found")
     shutil.copytree(APP_SRC, d, dirs_exist_ok=True, ignore=shutil.ignore_patterns("logs", "__pycache__"))
     (d / "logs").mkdir(exist_ok=True)
+    for old in ("live.json", "live.json.tmp"):   # the app shares data through memory now
+        (d / old).unlink(missing_ok=True)
+    if lua_dir():
+        shutil.copytree(LUA_SRC, lua_dir(), dirs_exist_ok=True)
     ini = documents() / "Assetto Corsa" / "cfg" / "python.ini"
     if ini.parent.exists():
         text = ini.read_text(errors="ignore") if ini.exists() else ""
@@ -82,8 +98,9 @@ def install_app():
 def uninstall_app():
     """Remove the in-game app from AC and switch it off in python.ini. Laps in data/ are kept."""
     d = app_dir()
-    if d and d.exists():
-        shutil.rmtree(d, ignore_errors=True)
+    for folder in (d, lua_dir()):
+        if folder and folder.exists():
+            shutil.rmtree(folder, ignore_errors=True)
     ini = documents() / "Assetto Corsa" / "cfg" / "python.ini"
     if ini.exists():
         ini.write_text(re.sub(r"(\[RACELOGGER\]\s*ACTIVE\s*=\s*)1", r"\g<1>0", ini.read_text(errors="ignore"), flags=re.I))
@@ -114,20 +131,23 @@ def ingest_csv(path, origin=None):
             rows.append([float(x) for x in line.split(",")])
     if not rows or not {"t", "pos", "speed"} <= set(header):
         return None
+    return ingest_rows(meta, header, np.array(rows), origin or "file:" + Path(path).name)
+
+
+def ingest_rows(meta, header, a, origin):
+    """Store one lap given as columns (header) x rows. Shared by CSV imports and the live car feed."""
     if meta.get("source") in ("online", "ai", "player") and not content.supported(meta.get("car", ""), meta.get("track", "")):
         return None   # mod content: versions differ between servers, so the laps aren't comparable
-    a = np.array(rows)
-    valid, note = int(meta.get("valid", 1)), ""
+    valid, note = int(meta.get("valid", 1)), meta.get("note", "")
     track = meta.get("track", "unknown")
-    if meta.get("source") in ("online", "ai") and "x" in header:
+    if valid and meta.get("source") in ("online", "ai") and "x" in header:
         chk = analysis.line_check(track, a[:, header.index("x")], a[:, header.index("z")])
         if chk and chk["cut"]:
             valid, note = 0, json.dumps({"cut": f"off line {chk['dev']} m at {analysis.corner_at(track, chk['at'])}"})
     return store.add_lap(
         {"source": meta.get("source", "import"), "driver": meta.get("driver", ""), "car": meta.get("car", "unknown"),
          "track": track, "lap_ms": int(float(meta.get("lap_ms", a[-1, 0] * 1000))),
-         "valid": valid, "has_inputs": int("throttle" in header and "brake" in header),
-         "origin": origin or "file:" + Path(path).name, "note": note},
+         "valid": valid, "has_inputs": int("throttle" in header and "brake" in header), "origin": origin, "note": note},
         {c: a[:, i] for i, c in enumerate(header)})
 
 

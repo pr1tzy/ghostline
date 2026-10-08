@@ -68,7 +68,10 @@ Every official Assetto Corsa car and track, including the DLCs. Mod cars and tra
 versions differ between servers, so the comparison wouldn't be fair.
 
 **Will it hurt my FPS?**
-It shouldn't. The in-game app samples 20 times a second and writes small files; the rest runs outside the game.
+No. The in-game app only copies each car's numbers into shared memory (no files, no text) and does nothing while
+Ghostline isn't running; everything else runs outside the game. In tests it costs about 0.02 ms per frame, and about
+0.001 ms with Custom Shaders Patch, which gets an even lighter Lua version automatically. Its window shows the real
+cost on your PC.
 
 **Can my friends see it?**
 By default only you can, on your own PC. If you want a public read-only copy, see
@@ -85,7 +88,8 @@ Double-click `uninstall.bat`. It removes the in-game app from AC and the autosta
 
 - **Live says "Waiting for AC"**: the game only shares telemetry in a session (on track or in the pits), not in
   the menus.
-- **No ghosts**: open the **References** page, which shows whether the in-game app is installed and active.
+- **No ghosts**: ghosts are only recorded while Ghostline is running. Open the **References** page, which shows
+  whether the in-game app is installed and active.
   Restart your AC session after the first install. In Content Manager, check Settings > Assetto Corsa > Apps and
   tick RaceLogger.
 - **"Mod content: not recorded"**: that car or track isn't official content (see the FAQ).

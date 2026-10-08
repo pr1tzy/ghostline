@@ -29,6 +29,21 @@ To rename a corner, give a track a length, or change a car's name or class, add 
 Corner positions are metres from the start line. Overrides always win over what's read from the game. Track ids
 are the AC folder name, plus `-<layout>` for tracks with layouts (for example `ks_nordschleife-nordschleife`).
 
+## How other cars are recorded
+
+The in-game app does as little as possible: it copies every car's position, speed and lap times into a block of
+shared memory (`GhostlineCars.v1`), the same way AC shares your own car. Ghostline reads it from outside the game
+(`backend/carfeed.py`) and does the rest: lap detection, saving ghost laps, standings and gaps.
+
+- With Custom Shaders Patch, `GhostlineLogger` (CSP Lua) does the copying. It also passes on the game's own verdict on
+  each lap (valid or not, number of cuts), which Ghostline uses for other drivers' laps.
+- Without CSP, the Python `RaceLogger` does it. It stands down by itself while the Lua app is running.
+- Ghostline writes a heartbeat and a list of which cars need full detail (your car model or class) into
+  `GhostlineWant.v1`. The apps send only track positions for the other cars, and nothing at all when Ghostline
+  isn't running. Each car is sampled 20 times a second, spread over frames.
+- Both apps show what they cost per frame in their window.
+- Older versions of the app wrote CSV files and `live.json`; those are still picked up.
+
 ## How ghosts are kept fair
 
 - **Pruning**: only your laps and the best lap of the top 3 other drivers per car and track are kept
@@ -94,7 +109,8 @@ see [SECURITY.md](../SECURITY.md).
 - Run a second server against the same data, without the recorder:
   `set GHOSTLINE_PORT=8766 && .venv\Scripts\python -m uvicorn backend.app:app --port 8766`
 - Tests (throwaway database each): `.venv\Scripts\python tests/test_samples.py` runs offline on the sample laps
-  (this is what CI runs; needs `pip install httpx`). `tests/test_compare.py` also imports two real F1 laps, so it needs
+  (needs `pip install httpx`). `tests/test_feed.py` runs the in-game app against a fake AC through real shared
+memory into the car feed, and `tests/test_lua_app.py` runs the CSP app under LuaJIT (`pip install lupa`). CI runs all three. `tests/test_compare.py` also imports two real F1 laps, so it needs
   internet and F1's servers, which often refuse cloud machines.
 - Dependency check: `.venv\Scripts\python -m pip install pip-audit && .venv\Scripts\python -m pip_audit -r requirements.txt`.
 

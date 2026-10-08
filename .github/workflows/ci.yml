@@ -20,12 +20,16 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache: pip
-      - run: python -m pip install -r requirements.txt pip-audit httpx
+      - run: python -m pip install -r requirements.txt pip-audit httpx lupa
       - name: Compile
         run: python -m compileall -q backend run.py tests
       - name: Frontend syntax
         run: node --check frontend/js/app.js
       - name: Sample laps test (offline)
         run: python tests/test_samples.py
+      - name: In-game app to car feed, end to end (shared memory)
+        run: python tests/test_feed.py
+      - name: CSP Lua app layout (LuaJIT)
+        run: python tests/test_lua_app.py
       - name: Dependency audit
         run: python -m pip_audit -r requirements.txt

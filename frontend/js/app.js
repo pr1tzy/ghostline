@@ -859,7 +859,7 @@ Keep this window open while you drive.</pre>
 async function refs(view) {
   const [st, laps] = await Promise.all([api('/state'), api('/laps')]);
   const a = st.app || {}, rl = laps.filter(l => l.source !== 'player'), mine = st.latest_best;
-  const appState = !a.ac_path ? '<span class="warn">Assetto Corsa not found</span>' : a.active ? '<span class="ok">Installed and active</span>' : a.installed ? '<span class="warn">Installed, not active</span>' : '<span class="warn">Not installed</span>';
+  const appState = (!a.ac_path ? '<span class="warn">Assetto Corsa not found</span>' : a.active ? '<span class="ok">Installed and active</span>' : a.installed ? '<span class="warn">Installed, not active</span>' : '<span class="warn">Not installed</span>') + (a.csp ? (a.lua ? ' · <span class="ok">CSP version installed</span>' : ' · <span class="warn">CSP version not installed</span>') : '');
   view.innerHTML = `<section>
     <div class="eyebrow">References / <b>${rl.length} laps</b></div>
     <h1 class="mega split">Chase<br><em>faster</em></h1>
