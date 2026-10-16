@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.2.0
+
+Coaching on the track, inside the game (needs Custom Shaders Patch), from the best lap for your car.
+
+- **Brake boards** where that lap braked, moved for the speed you're carrying, with the gear and the corner's
+  slowest speed above them.
+- **Tick-tick-brake countdown**, timed to within half a frame, so you brake on the beat instead of reacting late.
+- **Racing line** ahead of you that turns yellow and red where you need to slow down, also following your speed.
+- **3D ghost** of that lap: the car's own model, see-through, with your gap above it.
+- All of it is drawn only on your screen (online too), costs about 0.03 ms per frame, and can be switched off in the
+  Ghostline Logger window. Details in docs/advanced.md, "In-game coaching".
+
 ## 2.1.0
 
 Ghostline now installs like a normal Windows app.

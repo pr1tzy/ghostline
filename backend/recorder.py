@@ -10,7 +10,7 @@ from ctypes import wintypes
 
 import numpy as np
 
-from . import analysis, carfeed, content, ingest, settings, store
+from . import analysis, carfeed, coach, content, ingest, settings, store
 
 HZ = 60
 STATUS_LIVE, STATUS_PAUSE = 2, 3
@@ -249,6 +249,7 @@ class Recorder(threading.Thread):
         self.ghost = analysis.prep(gh[0]["id"]) if gh else None
         base = self.ghost or self.pb
         self.corners = analysis.find_corners(base) if base else []
+        coach.publish(car, track)   # best lap for this car + track, to the in-game app
 
     def _loop(self, phys, gfx, stat):
         rows, recording = [], False

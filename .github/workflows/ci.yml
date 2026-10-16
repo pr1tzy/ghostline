@@ -31,5 +31,7 @@ jobs:
         run: python tests/test_feed.py
       - name: CSP Lua app layout (LuaJIT)
         run: python tests/test_lua_app.py
+      - name: In-game coaching (LuaJIT)
+        run: python tests/test_coach.py
       - name: Dependency audit
         run: python -m pip_audit -r requirements.txt

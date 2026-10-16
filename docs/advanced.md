@@ -78,6 +78,37 @@ page moves every car at its current pace, so the map stays smooth even at low ra
   your own on that track first.
 - **Estimated pedals**: throttle and brake for other cars are estimated from their speed, and shown dotted.
 
+## In-game coaching
+
+The CSP app (Ghostline Logger) draws three things from the best lap for your car on this track: the fastest valid
+lap Ghostline has with that car, yours or another driver's. Ghostline sends it into shared memory
+(`GhostlineRef.v1`, `backend/coach.py`) when the session starts and whenever a faster lap is saved; the app switches
+to a new one at the start of your next lap. Everything else happens inside the game, every frame, so nothing waits
+on Ghostline. The settings are in the app's window (CSP keeps them in
+`Documents\Assetto Corsa\cfg\extension\state\lua`).
+
+- **Brake boards**: a stripe across the road where the best lap first touched the brake after its top speed, with
+  the gear and the slowest speed of the corner above it. The board moves with your speed: it sits where the best
+  lap's braking would take you from the speed you'll arrive with down to that slowest speed (faster than the best
+  lap: earlier; slower: later). It stops moving one second before you reach it. Lifts show as LIFT.
+- **Countdown**: two ticks 0.6 s and 0.3 s before the board and a higher tone at it, timed from your current
+  speed. Each one plays on the frame closest to the exact moment, so it's off by at most half a frame (8 ms at
+  60 fps, 4 ms at 120; `tests/test_coach.py` checks this by driving recorded laps frame by frame). A single
+  "brake now" beep would always be late by your reaction time (about 0.2 s, 14 m at 250 km/h); a countdown lets you
+  brake on the beat instead. **Sound early by** shifts the sounds if your audio has a delay or you want a lead.
+- **Racing line**: the best lap's line for the next 50-400 m. Red from your board to the slowest point, yellow for
+  the countdown before a board, through lifts and until the best lap was back on full throttle, green otherwise.
+  It's coloured from the same moving boards, so it follows your speed too.
+- **3D ghost**: the car's own 3D model (a light version of it), see-through and outlined, where the best lap was at
+  your current lap time, with your gap above it. If the model can't be loaded it shows as a footprint on the road.
+- **Laps without pedal data** (other drivers): their brake points are worked out from how hard the car slowed down.
+  Checked against 240 corners of laps with real pedal data, that lands 2 m early on average (corrected) and within
+  4 m nine times out of ten. The window says "brake points estimated" when that's the case.
+- **Cost**: about 0.03 ms per frame measured outside the game; the window shows the real figure.
+
+Only you see any of this: it's drawn on your screen and nothing is sent to the server. If your league doesn't
+allow driving aids, untick them in the window.
+
 ## Run from source
 
 For working on Ghostline, or if you'd rather not run an installer. Needs Python 3.12 or newer.

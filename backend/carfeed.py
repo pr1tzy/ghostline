@@ -16,7 +16,7 @@ from ctypes import wintypes
 
 import numpy as np
 
-from . import ingest, settings, store
+from . import coach, ingest, settings, store
 
 CARS, WANT, SET = "Local\\GhostlineCars.v1", "Local\\GhostlineWant.v2", "Local\\GhostlineSettings.v1"
 SIZE, WANT_SIZE, SET_SIZE, MAXC = 8672, 96, 16, 64
@@ -223,6 +223,7 @@ class CarFeed(threading.Thread):
             self.saved += 1
             store.clear_samples()
             store.prune(p["car"], p["track"])
+            coach.lap_saved(p["car"], p["track"])
 
     def snapshot(self):
         s = self.snap

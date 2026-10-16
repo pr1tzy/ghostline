@@ -1,0 +1,199 @@
+"""In-game coaching (ac_app/GhostlineLogger/coach.lua) under real LuaJIT, via lupa, with a fake CSP API, driving the
+bundled Monza sample lap frame by frame: block layout, countdown timing, boards that move with your speed, the
+racing line and the ghost. Offline; needs `pip install lupa` (skipped without it)."""
+import ctypes
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+import numpy as np
+
+os.environ["RA_DATA"] = tempfile.mkdtemp()
+os.environ["GHOSTLINE_HOME"] = os.environ["RA_DATA"]
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+try:
+    from lupa.luajit21 import LuaRuntime
+except ImportError:
+    print("skipped: pip install lupa")
+    sys.exit(0)
+from backend import analysis, coach, ingest, store  # noqa: E402
+
+coach.NAME += f".test{os.getpid()}"   # never touch a running Ghostline's block
+
+ingest.load_samples()
+me = store.q("SELECT * FROM laps WHERE track='monza' AND source='player'")[0]
+p = analysis.prep(me["id"])
+CAR, TRACK = me["car"], me["track"]
+
+# publish(): the best lap here goes into the shared block (the sample ghost is faster, its pedals are estimated)
+best = coach.publish(CAR, TRACK)
+fastest = store.q("SELECT id FROM laps WHERE track='monza' AND valid=1 ORDER BY lap_ms LIMIT 1")[0]["id"]
+blk = coach._open()
+assert best == fastest and blk.magic == coach.MAGIC and blk.rev % 2 == 0 and blk.lapId == best and blk.n > 2000, (best, blk.n)
+assert coach.publish(CAR, TRACK) == best and blk.rev == 2, "republishing the same lap must not rewrite the block"
+
+# the block the game gets in this test: the sample lap with real pedal data
+ref = coach.Ref()
+corners = coach.fill(ref, p, me, CAR, TRACK)
+assert ref.est == 0 and len(corners) >= 5 and ref.rev % 2 == 0
+data = bytes(ctypes.string_at(ctypes.addressof(ref), coach.SIZE))
+
+lua = LuaRuntime(unpack_returned_tuples=True, encoding=None)
+lua.execute(r"""
+ffi = require('ffi')
+package.path = '%s/?.lua;' .. package.path
+blocks, sounds, sim, carState = {}, {}, { t = 0 }, nil
+local V = {}; V.__index = V
+function vec3(x, y, z) return setmetatable({ x = x or 0, y = y or 0, z = z or 0 }, V) end
+function V:set(x, y, z) self.x, self.y, self.z = x, y, z return self end
+function V:normalize() local l = math.sqrt(self.x ^ 2 + self.y ^ 2 + self.z ^ 2) if l > 0 then self:set(self.x / l, self.y / l, self.z / l) end return self end
+function vec2(x, y) return { x = x, y = y } end
+function rgbm(r, g, b, m) return { r = r, g = g, b = b, mult = m } end
+local any = setmetatable({}, { __index = function () return function (self) return self end end })
+ghost = { pos = nil, visible = false }
+local node = setmetatable({
+  setVisible = function (self, v) ghost.visible = v end,
+  setPosition = function (self, p) ghost.pos = { p.x, p.y, p.z } end,
+  setOrientation = function (self, l, u) ghost.look = { l.x, l.y, l.z } end,
+  loadKN5LODAsync = function (self, f, m, cb) ghost.file = f; cb(nil, any) end,
+  dispose = function () end }, { __index = any })
+local function refBlock() return ffi.cast('ghl_ref*', blocks['GhostlineRef.v1']) end
+ac = {
+  getCarID = function () return '%s' end,
+  getTrackFullID = function () return '%s' end,
+  getCar = function (i) return carState end,
+  writeMemoryMappedFile = function (name, size)
+    if not blocks[name] then blocks[name] = ffi.new('uint8_t[?]', size) end
+    return ffi.cast('void*', blocks[name]) end,
+  trackProgressToWorldCoordinate = function (p)
+    local r = refBlock(); local f = (p %% 1) * r.length / r.step; local i = math.floor(f) %% r.n
+    return vec3(r.x[i], 0, r.z[i]) end,
+  getTrackAISplineSides = function () return vec2(6, 6) end,
+  findNodes = function () return { createBoundingSphereNode = function () return node end } end,
+  isInReplayMode = function () return false end,
+  storage = function (layout) return layout end,
+  AudioEvent = { fromFile = function (p) return { start = function () sounds[#sounds + 1] = { t = sim.t, f = p.filename } end } end },
+}
+physics = { raycastTrack = function (pos, dir, len, point, normal) if normal then normal:set(0, 1, 0) end return pos.y end }
+drawn = { quads = {}, line = {}, text = {} }
+render = {
+  BlendMode = { AlphaBlend = 1 }, DepthMode = { ReadOnlyLessEqual = 4 }, CullMode = { None = 2 }, GLPrimitiveType = { Quads = 3 },
+  setBlendMode = function () end, setDepthMode = function () end, setCullMode = function () end,
+  on = function (name, fn) drawFn = fn end,
+  glBegin = function () end, glEnd = function () end,
+  glSetColor = function (c) drawn.line[#drawn.line + 1] = c.g end,
+  glVertex = function () end,
+  quad = function (a, b, c, d, col) drawn.quads[#drawn.quads + 1] = { (a.x + b.x) / 2, (a.z + b.z) / 2, col.g } end,
+  debugText = function (p, s) drawn.text[#drawn.text + 1] = s end,
+}
+ui = { text = function (s) lastText = s end, separator = function () end, sameLine = function () end,
+       checkbox = function () return false end, slider = function (l, v) return v, false end }
+local c0 = 0
+os.preciseClock = function () c0 = c0 + 1e-6 return c0 end
+__dirname = 'app'
+""" % (str(ROOT / "ac_app" / "GhostlineLogger").replace("\\", "/"), CAR, TRACK))
+
+# layout: LuaJIT's struct must match backend/coach.py's field for field
+lua.execute("require('coach')")
+for name, _ in coach.Ref._fields_:
+    off = lua.eval(f"tonumber(ffi.offsetof('ghl_ref', '{name}'))")
+    assert off == getattr(coach.Ref, name).offset, (name, off, getattr(coach.Ref, name).offset)
+assert lua.eval("tonumber(ffi.sizeof('ghl_ref'))") == coach.SIZE
+g = lua.globals()
+
+
+def drive(factor, fps, until=None):
+    """Drive the lap exactly like the reference, `factor` times as fast. Returns what the app did."""
+    lua.execute(f"""
+    package.loaded['coach'] = nil
+    blocks['GhostlineRef.v1'] = ffi.new('uint8_t[?]', {coach.SIZE})
+    sounds, drawn = {{}}, {{ quads = {{}}, line = {{}}, text = {{}} }}
+    carState = {{ splinePosition = 0, speedKmh = 0, lapTimeMs = 0, brake = 0, isInPitlane = false, position = vec3() }}
+    """)
+    lua.globals().blob = data
+    lua.execute(f"ffi.copy(blocks['GhostlineRef.v1'], blob, {coach.SIZE})")
+    m = lua.eval("require('coach')")
+    T_end = (until or p["t"][-1]) / factor
+    dt = 1.0 / fps
+    out = {"locks": {}, "snap": {}}
+    clock, T = 0.0, 0.0
+    while T < T_end:
+        tr = T * factor
+        d = float(np.interp(tr, p["t"], p["d"]))
+        cs = g.carState
+        cs.splinePosition, cs.speedKmh, cs.lapTimeMs = d / p["L"], float(np.interp(d, p["d"], p["speed"])) * factor, int(T * 1000)
+        cs.brake = float(np.interp(d, p["d"], p["brake"]))
+        cs.position.x, cs.position.y, cs.position.z = float(np.interp(d, p["d"], p["x"])), 0.45, float(np.interp(d, p["d"], p["z"]))
+        g.sim.t = T
+        clock += dt
+        m.update(dt, clock)
+        lua.execute("drawn.line = {}")
+        g.drawFn()
+        st = m.state()
+        for k, b in st.boards.items():
+            if b.locked and k not in out["locks"]:
+                out["locks"][k] = float(b.at)
+        for key, at in (("ghost40", 40.0), ("line", None)):
+            if key == "ghost40" and abs(T - at) < dt / 2:
+                out["snap"]["ghost"] = (list(g.ghost.pos.values()), float(m.gap), d, bool(g.ghost.visible))
+        out.setdefault("frames", []).append((T, d, list(g.drawn.line.values())))
+        T += dt
+    out["sounds"] = [(float(s.t), s.f.decode()) for s in g.sounds.values()]
+    out["text"] = list(g.drawn.text.values())
+    m.window()
+    return out
+
+
+t_at = lambda dist: float(np.interp(dist, p["d"], p["t"]))
+for fps in (60, 120):
+    r = drive(1.0, fps)
+    brakes = [s for s in r["sounds"] if s[1].endswith("brake.wav")]
+    errs = []
+    for c in corners:
+        if c["kind"] != 1 or c["brake"] < 100:
+            continue
+        tb = t_at(c["brake"])
+        s = min(brakes, key=lambda s: abs(s[0] - tb))
+        errs.append(s[0] - tb)
+    errs = np.array(errs)
+    assert len(errs) >= 4 and np.all(np.abs(errs) <= 0.5 / fps + 0.002), (fps, errs.round(4))
+    ticks = [s for s in r["sounds"] if s[1].endswith("tick.wav")]
+    assert len(ticks) >= 2 * len(errs), len(ticks)
+    print(f"{fps} fps: brake cue vs reference brake point: worst {np.abs(errs).max() * 1000:.1f} ms over {len(errs)} corners")
+
+# the ghost drives the same lap: it sits on your car
+pos, gap, d, vis = r["snap"]["ghost"]
+x, z = np.interp(d, p["d"], p["x"]), np.interp(d, p["d"], p["z"])
+assert vis and abs(gap) < 3 and np.hypot(pos[0] - x, pos[2] - z) < 3, (gap, pos, x, z)
+assert abs(pos[1] - 0.45) < 0.05, "ghost at your car's height above the road"
+
+# racing line, 1 s before Roggia's board at the reference speed: green, yellow for the countdown, red from the board
+roggia = next(c for c in corners if c["name"] == "Roggia")
+T0 = t_at(roggia["brake"]) - 1.0
+T, d, cols = min(r["frames"], key=lambda f: abs(f[0] - T0))
+red = next(j for j, gch in enumerate(cols) if gch < 0.3)
+d_red = d + 3 + red * ref.step
+assert abs(d_red - roggia["brake"]) < 2.5, (d_red, roggia["brake"])
+assert any(0.7 < gch < 0.9 for gch in cols[:red]), "yellow before the board"
+assert cols[0] > 0.9, "green right in front of the car"
+print(f"racing line turns red {d_red - roggia['brake']:+.1f} m from Roggia's brake point")
+
+# 10% faster: every board moves earlier, by what the best lap's braking needs to lose the extra speed
+r = drive(1.1, 60, until=p["t"][-1] * 0.6)
+checked = 0
+for k, c in enumerate(corners):
+    if c["kind"] != 1 or k not in r["locks"] or c["brake"] < 100:
+        continue
+    vp, vmin = 1.1 * c["speed"] / 3.6, c["min"] / 3.6
+    want = c["apex"] - min(max((vp * vp - vmin * vmin) / (2 * c["decel"]), 5), c["apex"] - c["brake"] + 150)
+    got = r["locks"][k]
+    assert got < c["brake"] - 5 and abs(got - want) < 6, (c["name"], got, want, c["brake"])
+    checked += 1
+assert checked >= 2, checked
+pos, gap, d, vis = r["snap"]["ghost"]
+assert gap < -50, f"10% faster: the ghost should be well behind ({gap:.0f} m)"
+assert any(t.decode().startswith("BRAKE") for t in r["text"])
+print(f"10% faster: {checked} boards moved earlier as expected, ghost {gap:.0f} m behind")
+print("coach ok, window:", g.lastText.decode())

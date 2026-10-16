@@ -4,6 +4,7 @@
 -- backend/carfeed.py. LuaJIT writes the block directly, so the in-game cost is close to nothing.
 -- While this runs, the Python RaceLogger sees `luaTicks` moving and stays idle.
 -- Settings (rates, which cars, on/off) live in Ghostline's config/logger.json; the window here can change them.
+-- coach.lua (loaded below) adds the brake boards, racing line and 3D ghost.
 
 local ffi = ffi or require('ffi')
 
@@ -53,6 +54,17 @@ local perfSum, perfMax, perfN, perfDue, perfText = 0, 0, 0, 2, ''
 local edit, editAt = nil, -1e9   -- settings being changed in the window
 local track = ac.getTrackFullID('-')
 local online = ac.getSim().isOnlineRace and 1 or 0
+
+-- brake boards, racing line and 3D ghost (coach.lua); the logger keeps working if that ever fails
+local okCoach, coach = pcall(require, 'coach')
+if not okCoach then okCoach, coach = pcall(dofile, (__dirname or '.') .. '/coach.lua') end
+local coachErr = not okCoach and tostring(coach) or nil
+if not okCoach then coach = nil end
+
+local function runCoach(fn, ...)
+  local ok, err = pcall(fn, ...)
+  if not ok then coach, coachErr = nil, tostring(err) end
+end
 
 local function open()
   local ok, err = pcall(function ()
@@ -113,6 +125,7 @@ end
 
 function script.update(dt)
   clock = clock + dt
+  if coach then runCoach(coach.update, dt, clock) end
   if not d then
     if clock < checkDue or not open() then checkDue = clock + 5 return end
   end
@@ -160,6 +173,7 @@ end
 function script.windowMain(dt)
   ui.text('Ghostline: ' .. status)
   if perfText ~= '' then ui.text(perfText) end
+  if coach then runCoach(coach.window) elseif coachErr then ui.text('Coaching stopped: ' .. coachErr) end
   if not w or w.magic ~= WANT_MAGIC then
     ui.text('Settings appear once Ghostline is running.')
     return
