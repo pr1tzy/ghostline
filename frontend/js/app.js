@@ -856,7 +856,7 @@ async function getPage(view) {
     <p class="lead">Ghostline runs on your own PC next to Assetto Corsa. It records your laps, logs the fastest drivers on your server and shows you where the time goes. No account, nothing uploaded.</p>
     <div class="ctas">${ext(DOWNLOAD, 'Download for Windows', true)}${ext(REPO, 'View on GitHub')}</div>
     <p class="mono need">Windows 10 or 11 · Assetto Corsa on Steam · Content Manager optional · about 25 MB · no admin rights needed</p>
-    <p class="mono need"><a href="${REPO}#code-signing-policy" target="_blank" rel="noopener" data-hover>Code signing policy</a> · <a href="${REPO}#privacy" target="_blank" rel="noopener" data-hover>Privacy</a> · Free code signing provided by <a href="https://signpath.io" target="_blank" rel="noopener" data-hover>SignPath.io</a>, certificate by <a href="https://signpath.org" target="_blank" rel="noopener" data-hover>SignPath Foundation</a></p>
+    <p class="mono need"><a href="${REPO}#privacy" target="_blank" rel="noopener" data-hover>Privacy</a>: Ghostline only goes online when you ask it to.</p>
   </section>
   <section>
     <h2 class="big split-in">Install in<br><em>three</em> steps</h2>
@@ -864,7 +864,7 @@ async function getPage(view) {
       <div class="step" data-reveal><div class="no">01</div><div><h3 class="wide">Download</h3><p>Click <b>Download for Windows</b> to get <b>GhostlineSetup.exe</b>. It's built by GitHub straight from the open source code.</p></div>
         <div class="viz"><div class="files pairs mono"><span class="hl">GhostlineSetup.exe</span><span>about 25 MB, for your user only</span><span class="hl">Installs to</span><span>your AppData, no admin prompt</span><span class="hl">Your laps</span><span>kept across updates and reinstalls</span></div>
         <div class="viz-cap mono"><span>What you get</span><span>Checksums on the release page</span></div></div></div>
-      <div class="step" data-reveal><div class="no">02</div><div><h3 class="wide">Run it</h3><p>It asks one thing: should Ghostline start when you start a session in Assetto Corsa? Nothing is added to Windows startup. If Windows says it protected your PC, click <b>More info</b>, then <b>Run anyway</b>: Ghostline isn't code-signed yet.</p></div>
+      <div class="step" data-reveal><div class="no">02</div><div><h3 class="wide">Run it</h3><p>It asks one thing: should Ghostline start when you start a session in Assetto Corsa? Nothing is added to Windows startup. If Windows says it protected your PC, click <b>More info</b>, then <b>Run anyway</b>: Ghostline isn't code-signed.</p></div>
         <div class="viz"><div class="files mono" style="display:block;line-height:2"><span class="hl">[x]</span> Start Ghostline when I start a session in Assetto Corsa, and close it a few minutes after the game.<br><span>[ ]</span> Create a desktop shortcut</div>
         <div class="viz-cap mono"><span>The only choice in the installer</span><span>Change it later in the tray menu</span></div></div></div>
       <div class="step" data-reveal><div class="no">03</div><div><h3 class="wide">Drive</h3><p>Start any session in Assetto Corsa. The first time, restart that session once so the game loads Ghostline's in-game app. Every lap then shows up on the site as you cross the line.</p></div>

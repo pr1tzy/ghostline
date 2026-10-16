@@ -39,8 +39,7 @@ You need Windows 10 or 11 and Assetto Corsa from Steam. Content Manager is optio
 3. Ghostline opens in your browser. Start a session in Assetto Corsa and drive. The first time, restart that session
    once so the game loads Ghostline's in-game app.
 
-**"Windows protected your PC"?** Ghostline isn't code-signed yet (free signing for open-source projects is on its
-way, see the [code signing policy](#code-signing-policy)). Click **More info > Run anyway**. Every release is built by GitHub from this repository's source, and the release
+**"Windows protected your PC"?** Ghostline isn't code-signed (a certificate costs money every year). Click **More info > Run anyway**. Every release is built by GitHub from this repository's source, and the release
 page lists checksums and a build-provenance record so you can check the file is the real one.
 
 Prefer no installer? Each release also has `Ghostline-portable.zip` (unzip, run `Ghostline.exe`), and you can run it
@@ -107,17 +106,6 @@ whether to keep your laps for a later reinstall.
 - **Ghostline won't start**: the log is in `%LOCALAPPDATA%\Ghostline\data\ghostline.log`.
 
 Still stuck? [Open an issue](https://github.com/pr1tzy/ghostline/issues) with the log.
-
-## Code signing policy
-
-Free code signing provided by [SignPath.io](https://signpath.io), certificate by
-[SignPath Foundation](https://signpath.org).
-
-- Committers and reviewers: [pr1tzy](https://github.com/pr1tzy)
-- Approvers: [pr1tzy](https://github.com/pr1tzy)
-
-Every release is built by GitHub Actions from this repository's source (`.github/workflows/release.yml`), and each
-signing request is approved by hand. Only files built from this repository are signed.
 
 ## Privacy
 
