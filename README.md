@@ -17,10 +17,10 @@ fastest drivers on the server you're racing on, and shows you corner by corner w
   lap of the three fastest drivers is kept as a ghost for each car and track. Laps that cut the track are thrown out.
 - **Coaching on the track, in the game** (with Custom Shaders Patch). A brake board at every corner where the best
   lap for your car braked, with a tick-tick-brake countdown timed from your speed so you brake on the beat. A racing
-  line that turns yellow and red where you need to slow down, and a see-through 3D ghost of that lap with the gap
-  above it. Only you see them, online too.
-- **A full dash, so you don't need other apps.** Gear and revs, delta, timing and sectors, pedals with the ghost's
-  inputs, tyres, and live standings with gaps. Six panels you switch on and place one by one.
+  line of chevrons, like the F1 games', that turns yellow and red where you need to slow down (full or corners only),
+  and a see-through 3D ghost of that lap with the gap above it. Only you see them, online too.
+- **A full dash, so you don't need other apps.** Standings with live gaps, timing and sectors, gear and revs with
+  the delta, pedals with the ghost's inputs, and tyres, in one horizontal window. Switch any section off.
 - **A debrief that tells you what to fix.** "Roggia: brake 14 m later", "Lesmo 2: carry 3 km/h more through the
   apex". Plus speed, gap and pedal charts, and a track map coloured by where you gain and lose.
 - **A live dash for a second monitor.** Gap to your best and to the ghost, predicted lap, sectors, how you did in

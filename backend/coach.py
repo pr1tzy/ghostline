@@ -12,7 +12,7 @@ from ctypes import wintypes
 
 import numpy as np
 
-from . import analysis, ingest, store
+from . import analysis, store
 
 NAME = "Local\\GhostlineRef.v1"
 MAGIC = 0x31524847          # "GHR1"
@@ -29,7 +29,7 @@ class Ref(ctypes.Structure):
         ("lapMs", ctypes.c_int32), ("lapId", ctypes.c_int32),
         ("est", ctypes.c_uint8), ("pad", ctypes.c_uint8 * 3),       # est: pedals worked out from speed (lap had no inputs)
         ("car", ctypes.c_char * 48), ("track", ctypes.c_char * 64), ("driver", ctypes.c_char * 40),
-        ("model", ctypes.c_char * 160), ("mainModel", ctypes.c_char * 160),   # car LOD + main kn5, relative to AC
+        ("model", ctypes.c_char * 160), ("mainModel", ctypes.c_char * 160),   # unused since 2.3 (the ghost is CSP's car shape); kept so the layout stays
         ("x", ctypes.c_float * MAXP), ("z", ctypes.c_float * MAXP), ("t", ctypes.c_float * MAXP),
         ("speed", ctypes.c_float * MAXP), ("brake", ctypes.c_float * MAXP), ("throttle", ctypes.c_float * MAXP),
         ("gear", ctypes.c_int8 * MAXP),
@@ -67,22 +67,6 @@ def best_lap(car, track):
     r = store.q("SELECT id FROM laps WHERE source IN ('player','online','ai') AND valid=1 AND car=? AND track=? "
                 "ORDER BY lap_ms LIMIT 1", (car, track))
     return r[0]["id"] if r else None
-
-
-def models(car):
-    """A light LOD of the car's 3D model for the ghost, plus the main model (which holds the textures)."""
-    ac = ingest.find_ac()
-    folder = ac / "content" / "cars" / car if ac else None
-    if not folder or not folder.is_dir():
-        return "", ""
-    kn5 = [f for f in folder.glob("*.kn5") if f.name.lower() != "collider.kn5"]
-    if not kn5:
-        return "", ""
-    main = max(kn5, key=lambda f: f.stat().st_size)
-    by = {f.stem.lower(): f for f in kn5}
-    lod = next((f for k in ("lod_c", "lod_b", "lod_d") for s, f in by.items() if s.endswith(k)), main)
-    rel = lambda f: f.relative_to(ac).as_posix()
-    return rel(lod), rel(main)
 
 
 def corners(p):
@@ -134,8 +118,6 @@ def fill(ref, p, lap, car, track):
     ref.lapMs, ref.lapId, ref.est = int(lap["lap_ms"]), int(lap["id"]), int(bool(p["est"]))
     ref.car, ref.track = car.encode()[:47], track.encode()[:63]
     ref.driver = (lap["driver"] or "").encode("utf-8")[:39]
-    lod, main = models(car)
-    ref.model, ref.mainModel = lod.encode()[:159], main.encode()[:159]
     ref.magic = MAGIC
     ref.rev += 1   # even: complete
     return cs

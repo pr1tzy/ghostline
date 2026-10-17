@@ -1,5 +1,5 @@
--- Ghostline dash: gear, delta, timing, pedals, tyres and standings, each its own window (show, hide and place them
--- from the CSP app bar). Same look as the Ghostline site: solid near-black panels with cut corners and hairlines,
+-- Ghostline dash: one horizontal panel with standings, timing, gear + delta, pedals and tyres, each section switched
+-- on or off in the Ghostline window (place the dash itself from the CSP app bar). Same look as the Ghostline site: solid near-black panels with cut corners and hairlines,
 -- Grotesk Gras for the gear, Sligoil for numbers, Lack for labels. Violet is you, cyan is the ghost (the best lap
 -- Ghostline sends), teal is time gained, pink is time lost. No icons: text and numbers only.
 
@@ -7,7 +7,8 @@ local H = {}
 local coach = nil
 function H.setCoach(c) coach = c end
 
-local cfg = ac.storage({ scale = 1, opacity = 0.92, deltaRef = 'ghost', board = false, rows = 7 }, 'ghostline.hud.')
+local cfg = ac.storage({ scale = 1, opacity = 0.92, deltaRef = 'ghost', board = false, standings = true, timing = true,
+  drive = true, pedals = true, tyres = true }, 'ghostline.hud.')
 H.cfg = cfg
 
 local function hex(r, g, b, a) return rgbm(r / 255, g / 255, b / 255, a or 1) end
@@ -25,15 +26,13 @@ local F = { head = dir .. 'Grotesk-Gras.ttf', num = dir .. 'Sligoil-Micro.ttf', 
 
 -- ---------- drawing helpers: everything in panel units, multiplied by the HUD scale ----------
 local S, ox, oy = 1, 0, 0
+local DASH_H, DRIVE_W = 188, 300
 local function v(x, y) return vec2(ox + x * S, oy + y * S) end
 
-local function begin(w, h)
-  S = math.min(math.max(cfg.scale or 1, 0.5), 2.5)
-  local c = ui.getCursor()
-  ox, oy = c.x, c.y
-  ui.dummy(vec2(w * S, h * S))   -- sizes the window (AUTO_RESIZE)
+-- the dash's background: one solid slab with cut corners and a hairline edge
+local function slab(w, h)
   panelBg.mult = cfg.opacity or 0.92
-  local cut = 9
+  local cut = 12
   ui.pathClear()
   ui.pathLineTo(v(0, 0)); ui.pathLineTo(v(w - cut, 0)); ui.pathLineTo(v(w, cut))
   ui.pathLineTo(v(w, h)); ui.pathLineTo(v(cut, h)); ui.pathLineTo(v(0, h - cut))
@@ -154,16 +153,16 @@ local function deltaNow(car)
   return nil, info and 'VS BEST LAP' or 'VS SESSION BEST', nil
 end
 
-local function clickToggle(key, a, b)
-  if ui.windowHovered() and ui.mouseClicked() then cfg[key] = cfg[key] == a and b or a end
+-- a click inside the current section (w x h from its origin) switches a setting
+local function clickToggle(key, a, b, w, h)
+  if ui.rectHovered(v(0, 0), v(w, h)) and ui.mouseClicked() then cfg[key] = cfg[key] == a and b or a end
 end
 
 -- ---------- Gear: segmented rev bar, gear, speed, assists ----------
-function H.gear()
+local function gearBody()
   local car = ac.getCar(0)
   if not car then return end
-  local W, Hh = 216, 118
-  begin(W, Hh)
+  local W, Hh = DRIVE_W, 118
   local id = 0
   maxRpm[id] = math.max(maxRpm[id] or 0, car.rpm)
   local lim = car.rpmLimiter and car.rpmLimiter > 1000 and car.rpmLimiter or math.max(maxRpm[id], 3000)
@@ -201,18 +200,17 @@ function H.gear()
 end
 
 -- ---------- Delta: gap to the best lap (or session best) right now ----------
-function H.delta()
+local function deltaBody()
   local car = ac.getCar(0)
   if not car then return end
-  local W, Hh = 380, 60
-  begin(W, Hh)
-  clickToggle('deltaRef', 'ghost', 'session')
+  local W, Hh = DRIVE_W, 60
+  clickToggle('deltaRef', 'ghost', 'session', W, Hh)
   local d, label, pred = deltaNow(car)
   deltaHist = d or 0
   local col = not d and C.mute or d <= 0 and C.gain or C.loss
   text(F.numB, d and string.format('%+.3f', d) or '-.---', 30, 14, 8, col)
   text(F.text, label, 10, 14, 43, C.mute)
-  local bx0, bx1, by0, by1 = 168, W - 14, 16, 30
+  local bx0, bx1, by0, by1 = 150, W - 14, 16, 30
   local xc = (bx0 + bx1) / 2
   local half = (bx1 - bx0) / 2
   rect(bx0, by0, bx1, by1, C.bg2)
@@ -227,12 +225,11 @@ function H.delta()
 end
 
 -- ---------- Timing: lap, sectors, last / best / ghost, fuel, session ----------
-function H.timing()
+local function timingBody()
   local car = ac.getCar(0)
   if not car then return end
   local sim = ac.getSim()
   local W, Hh = 290, 164
-  begin(W, Hh)
   text(F.text, 'LAP ' .. (car.lapCount + 1), 10, 14, 12, C.mute)
   local n = sim.carsCount
   if n > 1 and car.racePosition and car.racePosition > 0 then
@@ -286,17 +283,16 @@ function H.timing()
   if car.fuelPerLap and car.fuelPerLap > 0.01 then fl = fl .. string.format('   %.1f LAPS', fuel / car.fuelPerLap) end
   text(F.num, fl, 10, 14, 143, C.fg)
   local left = sim.sessionTimeLeft and sim.sessionTimeLeft / 1000 or 0
-  if left > 0 then text(F.num, clock(left), 10, W - 14, 143, C.mute, 1) end
+  if left > 0 and not cfg.standings then text(F.num, clock(left), 10, W - 14, 143, C.mute, 1) end   -- else it's in Standings
 end
 
 -- ---------- Pedals: clutch / brake / throttle with the ghost's pedals where you are, trace, steering ----------
-function H.pedals()
+local function pedalsBody()
   local car = ac.getCar(0)
   if not car then return end
   local W, Hh = 220, 132
-  begin(W, Hh)
   local info = coach and coach.info and coach.info()
-  local top, bot = 14, 100
+  local top, bot = 14, 142
   local function bar(x, val, col, label, ghostVal, hot)
     rect(x, top, x + 18, bot, C.bg2)
     local h = (bot - top) * math.min(math.max(val, 0), 1)
@@ -348,12 +344,11 @@ local function tyreColour(t, opt)
   return C.loss                           -- hot
 end
 
-function H.tyres()
+local function tyresBody()
   local car = ac.getCar(0)
   if not car or not car.wheels then return end
   local sim = ac.getSim()
   local W, Hh = 236, 184
-  begin(W, Hh)
   text(F.text, 'TYRES  C / PSI', 10, 14, 12, C.mute)
   if sim.ambientTemperature then
     text(F.num, string.format('AIR %d  TRACK %d', math.floor(sim.ambientTemperature + 0.5), math.floor((sim.roadTemperature or 0) + 0.5)), 10, W - 14, 12, C.mute, 1)
@@ -439,14 +434,13 @@ local function rowsBoard(sim, n)
   return rows
 end
 
-function H.standings()
+local function standingsBody()
   local me = ac.getCar(0)
   if not me then return end
   local sim = ac.getSim()
-  local n = math.min(math.max(math.floor(cfg.rows or 7), 3), 20)
-  local W, Hh = 344, 34 + n * 22
-  begin(W, Hh)
-  clickToggle('board', true, false)
+  local n = 7
+  local W, Hh = 344, DASH_H
+  clickToggle('board', true, false, W, Hh)
   text(F.text, cfg.board and 'STANDINGS' or 'RELATIVE', 10, 14, 12, C.mute)
   local left = sim.sessionTimeLeft and sim.sessionTimeLeft / 1000 or 0
   if left > 0 then text(F.num, clock(left), 10, W - 14, 12, C.mute, 1) end
@@ -473,17 +467,62 @@ function H.standings()
   end
 end
 
+-- ---------- the dash: sections side by side ----------
+local SECTIONS = {
+  { key = 'standings', w = 344, draw = function () standingsBody() end },
+  { key = 'timing', w = 290, draw = function () timingBody() end },
+  { key = 'drive', w = DRIVE_W, draw = function ()   -- gear on top, delta under it
+      gearBody()
+      local y0 = oy
+      oy = y0 + 122 * S
+      hline(14, DRIVE_W - 14, -4, C.line)
+      deltaBody()
+      oy = y0
+    end },
+  { key = 'pedals', w = 220, draw = function () pedalsBody() end },
+  { key = 'tyres', w = 236, draw = function () tyresBody() end },
+}
+
+function H.dash()
+  S = math.min(math.max(cfg.scale or 1, 0.5), 2.5)
+  local c = ui.getCursor()
+  local x0, y0 = c.x, c.y
+  local total = 0
+  for _, sec in ipairs(SECTIONS) do if cfg[sec.key] then total = total + sec.w end end
+  if total == 0 then
+    ui.text('Ghostline dash: every section is switched off (Ghostline window).')
+    return
+  end
+  ui.dummy(vec2(total * S, DASH_H * S))   -- sizes the window (AUTO_RESIZE)
+  ox, oy = x0, y0
+  slab(total, DASH_H)
+  local x = 0
+  for _, sec in ipairs(SECTIONS) do
+    if cfg[sec.key] then
+      ox, oy = x0 + x * S, y0
+      if x > 0 then vline(0, 14, DASH_H - 14, C.line) end   -- hairline between sections
+      sec.draw()
+      x = x + sec.w
+    end
+  end
+  ox, oy = x0, y0
+end
+
 -- ---------- settings, in the main Ghostline window ----------
 function H.settings()
   ui.separator()
-  ui.text('Dash: show each panel from the CSP app bar (Ghostline Gear, Delta, Timing, Pedals, Tyres, Standings).')
+  ui.text('Dash: show it from the CSP app bar (Ghostline Dash). Sections:')
+  for k, sec in ipairs(SECTIONS) do
+    local label = ({ standings = 'Standings', timing = 'Timing', drive = 'Gear + delta', pedals = 'Pedals', tyres = 'Tyres' })[sec.key]
+    if ui.checkbox(label, cfg[sec.key]) then cfg[sec.key] = not cfg[sec.key] end
+    if k < #SECTIONS then ui.sameLine() end
+  end
   local v1, c1 = ui.slider('##hudscale', cfg.scale, 0.6, 2, 'Dash size: %.2fx', true)
   if c1 then cfg.scale = v1 end
   local v2, c2 = ui.slider('##hudalpha', cfg.opacity, 0.3, 1, 'Dash background: %.2f', true)
   if c2 then cfg.opacity = v2 end
-  local v3, c3 = ui.slider('##hudrows', cfg.rows, 3, 20, 'Standings rows: %.0f', true)
-  if c3 then cfg.rows = math.floor(v3) end
-  ui.text('Click the Delta panel to switch best lap / session best, the Standings panel to switch relative / full order.')
+  ui.text('Click Delta to switch best lap / session best, Standings to switch relative / full order.')
 end
 
+H.sections = SECTIONS
 return H

@@ -95,12 +95,15 @@ on Ghostline. The settings are in the app's window (CSP keeps them in
   60 fps, 4 ms at 120; `tests/test_coach.py` checks this by driving recorded laps frame by frame). A single
   "brake now" beep would always be late by your reaction time (about 0.2 s, 14 m at 250 km/h); a countdown lets you
   brake on the beat instead. **Sound early by** shifts the sounds if your audio has a delay or you want a lead.
-- **Racing line**: the best lap's line for the next 50-400 m. Red from the board to the slowest point, yellow for
-  the countdown before a board, through lifts and until the best lap was back on full throttle, green otherwise.
-  Seen from the cockpit a flat line far ahead shrinks to a sliver, so it gets wider, a little higher and more
-  opaque with distance. The window shows how far ahead it's being drawn.
-- **3D ghost**: the car's own 3D model (a light version of it), see-through and outlined, where the best lap was at
-  your current lap time, with your gap above it. If the model can't be loaded it shows as a footprint on the road.
+- **Racing line**: chevrons along the best lap's line for the next 50-400 m, like the F1 games' line. Red from the
+  board to the slowest point, yellow for the countdown before a board, through lifts and until the best lap was back
+  on full throttle, green otherwise. **Corners only** draws just the stretch from 120 m before each board to the
+  exit. The chevrons grow with distance so the far ones stay readable from the cockpit. The 3D world is drawn in HDR,
+  so every colour goes through CSP's white point; without that, the line came out nearly black on a daylit track.
+  The window shows how many chevrons are drawn, how far ahead, and how often the road surface wasn't found.
+- **3D ghost**: your car's shape (CSP's simple car mesh), see-through cyan with brighter edges, where the best lap
+  was at your current lap time, with your gap above it. It fades out when it's on top of your car so it never fogs
+  up the cockpit. If CSP can't give the car shape it shows as a footprint on the road.
 - **Laps without pedal data** (other drivers): their brake points are worked out from how hard the car slowed down.
   Checked against 240 corners of laps with real pedal data, that lands 2 m early on average (corrected) and within
   4 m nine times out of ten. The window says "brake points estimated" when that's the case.
@@ -111,23 +114,22 @@ allow driving aids, untick them in the window.
 
 ## In-game dash
 
-Six panels, each its own window: show, hide and drag them from the CSP app bar (the title bar appears when you
-hover a panel). They work without Ghostline running; only the ghost parts need it. Size, background and the number
-of standings rows are in the Ghostline window. `ac_app/GhostlineLogger/hud.lua`; `tests/test_hud.py --png DIR`
-draws every panel to an image to check the design outside the game.
+One horizontal window, Ghostline Dash: show it and drag it from the CSP app bar (the title bar appears when you
+hover it). It works without Ghostline running; only the ghost parts need it. In the Ghostline window you switch each
+section on or off (the dash shrinks to what's left) and set its size and background. `ac_app/GhostlineLogger/hud.lua`;
+`tests/test_hud.py --png DIR` draws the dash to an image to check the design outside the game.
 
-- **Gear**: rev bar (top 45 % of the revs, cyan flash at the shift point), gear, speed, ABS / TC (lit while
-  working), brake bias, DRS.
-- **Delta**: gap to the best lap Ghostline sends, or to your session best (click to switch), with the bar, where
-  it was a second ago and the predicted lap.
+- **Standings**: cars around you on track with live gaps (relative), or the full order (click to switch). Gaps come
+  from when each car passed the same spot, 200 spots per lap. The driver whose lap is your ghost is in cyan.
 - **Timing**: current lap (greyed when the game has flagged it), sectors against your best sectors, last / best /
-  ghost lap, position, fuel with laps left, session time.
+  ghost lap, position, fuel with laps left.
+- **Gear + delta**: rev bar (top 45 % of the revs, cyan flash at the shift point), gear, speed, ABS / TC (lit while
+  working), brake bias, DRS; under it the gap to the best lap Ghostline sends, or to your session best (click to
+  switch), where it was a second ago and the predicted lap.
 - **Pedals**: clutch, brake and throttle with the best lap's brake and throttle at the same spot on track (cyan),
   ABS / TC flashes, the last 4 seconds of throttle and brake, steering angle.
 - **Tyres**: inside / middle / outside temperature against the tyre's own optimum (cold cyan, in the window teal,
   warm white, hot pink), core temperature, pressure, wear left, brake disc temperature.
-- **Standings**: cars around you on track with live gaps (relative), or the full order (click to switch). Gaps come
-  from when each car passed the same spot, 200 spots per lap. The driver whose lap is your ghost is in cyan.
 
 ## Run from source
 

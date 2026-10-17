@@ -53,6 +53,7 @@ function vec2(x, y) return { x = x, y = y } end
 function rgbm(r, g, b, m) return { r = r, g = g, b = b, mult = m } end
 local any = setmetatable({}, { __index = function () return function (self) return self end end })
 ghost = { pos = nil, visible = false }
+mat4x4 = { look = function (p, l, u) ghost.pos = { p.x, p.y, p.z } return {} end }
 local node = setmetatable({
   setVisible = function (self, v) ghost.visible = v end,
   setPosition = function (self, p) ghost.pos = { p.x, p.y, p.z } end,
@@ -74,12 +75,14 @@ ac = {
   findNodes = function () return { createBoundingSphereNode = function () return node end } end,
   isInReplayMode = function () return false end,
   storage = function (layout) return layout end,
+  SimpleMesh = { carShape = function () return 1 end },
   AudioEvent = { fromFile = function (p) return { start = function () sounds[#sounds + 1] = { t = sim.t, f = p.filename } end } end },
 }
 physics = { raycastTrack = function (pos, dir, len, point, normal) if normal then normal:set(0, 1, 0) end return pos.y end }
 drawn = { quads = {}, line = {}, text = {} }
 render = {
-  BlendMode = { AlphaBlend = 1 }, DepthMode = { ReadOnlyLessEqual = 4 }, CullMode = { None = 2 }, GLPrimitiveType = { Quads = 3 },
+  BlendMode = { AlphaBlend = 1 }, DepthMode = { ReadOnly = 1, ReadOnlyLessEqual = 4 }, CullMode = { None = 2, Back = 1 },
+  mesh = function (t) ghost.drawn = (ghost.drawn or 0) + 1 end,
   setBlendMode = function () end, setDepthMode = function () end, setCullMode = function () end,
   on = function (name, fn) drawFn = fn end,
   glBegin = function () end, glEnd = function () end,
@@ -89,7 +92,8 @@ render = {
   rectangle = function (p, dir, w, h) drawn.posts = (drawn.posts or 0) + 1 end,
 }
 ui = { text = function (s) lastText = s end, separator = function () end, sameLine = function () end,
-       checkbox = function () return false end, slider = function (l, v) return v, false end }
+       checkbox = function () return false end, radioButton = function () return false end,
+       slider = function (l, v) return v, false end }
 local c0 = 0
 os.preciseClock = function () c0 = c0 + 1e-6 return c0 end
 __dirname = 'app'
@@ -136,7 +140,8 @@ def drive(factor, fps, until=None):
             out["at"].setdefault(k, set()).add(round(float(b.at), 3))
         for key, at in (("ghost40", 40.0), ("line", None)):
             if key == "ghost40" and abs(T - at) < dt / 2:
-                out["snap"]["ghost"] = (list(g.ghost.pos.values()), float(m.gap), d, bool(g.ghost.visible))
+                gp = st.gpos
+                out["snap"]["ghost"] = ([gp.x, gp.y, gp.z], float(m.gap), d, bool(st.ghostOn))
         out.setdefault("frames", []).append((T, d, [tuple(q.values()) for q in g.drawn.line.values()]))
         T += dt
     out["sounds"] = [(float(s.t), s.f.decode()) for s in g.sounds.values()]
@@ -200,5 +205,26 @@ pos, gap, d, vis = r["snap"]["ghost"]
 assert gap < -50, f"10% faster: the ghost should be well behind ({gap:.0f} m)"
 assert any(t.decode().startswith("BRAKE") for t in r["text"])
 assert g.drawn.posts and g.drawn.posts > 1000, "an upright board at each corner"
+assert g.ghost.drawn and g.ghost.drawn > 1000, "the ghost silhouette is drawn when it's away from your car"
+# corners only: on the straight after the line (no corner within the 250 m drawn) nothing is drawn; full draws it all
+m = lua.eval("require('coach')")
+
+
+def count_at(dist):
+    cs = g.carState
+    cs.splinePosition, cs.lapTimeMs = dist / p["L"], int(t_at(dist) * 1000)
+    cs.speedKmh = float(np.interp(dist, p["d"], p["speed"]))
+    m.update(1 / 60, 9999.0)
+    lua.execute("drawn.line = {}")
+    g.drawFn()
+    return len(list(g.drawn.line.values()))
+
+
+straight = float(min(c["brake"] for c in corners if c["brake"] > 400)) - 450   # 450 m before the first board
+full = count_at(straight)
+m.cfg.cornersOnly = True
+part = count_at(straight)
+m.cfg.cornersOnly = False
+assert full > 60 and part == 0, (full, part)
 print(f"10% faster: {checked} boards stayed put, countdown on time, ghost {gap:.0f} m behind")
 print("coach ok, window:", g.lastText.decode())

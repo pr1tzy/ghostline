@@ -14,7 +14,7 @@ typedef struct {
   float step, length;
   int32_t lapMs, lapId;
   uint8_t est, pad[3];
-  char car[48], track[64], driver[40], model[160], mainModel[160];
+  char car[48], track[64], driver[40], model[160], mainModel[160];   // model fields: unused since 2.3
   float x[8192], z[8192], t[8192], speed[8192], brake[8192], throttle[8192];
   int8_t gear[8192];
   float cBrake[48], cSpeed[48], cApex[48], cMin[48], cDecel[48], cThrottle[48];
@@ -28,7 +28,8 @@ local M = {}
 local REF_MAGIC, CHECK = 0x31524847, 0.5
 local SHOW = 1200          -- boards appear this far before the corner (m)
 local CUES = { 0.6, 0.3, 0 }   -- countdown: two ticks, then "brake", seconds before the board
-local cfg = ac.storage({ boards = true, line = true, ghost = true, beep = true, lead = 0, ahead = 200, alpha = 0.35 },
+local cfg = ac.storage({ boards = true, line = true, cornersOnly = false, ghost = true, beep = true, lead = 0, ahead = 250,
+  alpha = 0.35 },
   'ghostline.coach.')
 
 local raw, blk                 -- the shared block (keep `raw`: the mapping closes when it's garbage collected)
@@ -40,16 +41,17 @@ local carId, track = ac.getCarID(0), ac.getTrackFullID('-')
 local car, clock, dNow, vNow, lapT, dtLast = nil, 0, 0, 0, 0, 1 / 60
 local boards = {}              -- per corner in view: { at = metres, dist = metres ahead, stage = countdown }
 local cue = { k = -1, stage = 0, shown = 0 }
-local rays = 0                 -- raycasts this frame (the road height is filled in a few points per frame)
+local rays, misses = 0, 0      -- raycasts this frame (road height is filled in a few points per frame); rays that found no road
 local gi, ghostOn, gpos, glook, gup = 0, false, vec3(), vec3(0, 0, 1), vec3(0, 1, 0)
-local ghostRoot, ghostModel, ghostFile, ghostMsg = nil, nil, nil, nil
 local ride = 0.5               -- height of the car's origin above the road, measured on your own car
 local perf = { sum = 0, max = 0, n = 0, due = 2, text = '' }
 local down, upv = vec3(0, -1, 0), vec3(0, 1, 0)
 local tmp1, tmp2, tmp3, tmp4, nrm = vec3(), vec3(), vec3(), vec3(), vec3()
-local colR, colY, colG = rgbm(1, 0.16, 0.1, 0.6), rgbm(1, 0.78, 0.1, 0.55), rgbm(0.15, 1, 0.45, 0.45)
+-- the 3D world is drawn in HDR: every colour here goes through CSP's white point (useWhiteRefPoint), otherwise it
+-- comes out nearly black against a daylit track
+local colR, colY, colG = rgbm(1, 0.12, 0.08, 0.9), rgbm(1, 0.78, 0.05, 0.9), rgbm(0.1, 1, 0.35, 0.85)
 local col = rgbm(1, 1, 1, 1)
-local boardCols = { [0] = rgbm(1, 1, 1, 0.55), rgbm(1, 0.85, 0.1, 0.75), rgbm(1, 0.5, 0.05, 0.85), rgbm(1, 0.1, 0.05, 0.95) }
+local boardCols = { [0] = rgbm(1, 1, 1, 0.9), rgbm(1, 0.85, 0.1, 0.95), rgbm(1, 0.5, 0.05, 1), rgbm(1, 0.1, 0.05, 1) }
 
 local function open()
   local ok = pcall(function ()
@@ -81,38 +83,11 @@ local function ground(i)
     local base = ac.trackProgressToWorldCoordinate(i * step / L)
     tmp1:set(ref.x[i], base.y + 4, ref.z[i])
     local hit = physics.raycastTrack(tmp1, down, 12)
+    if not hit or hit < 0 then misses = misses + 1 end
     Y[i] = (hit and hit >= 0) and base.y + 4 - hit or base.y
     Yok[i] = 1
   end
   return Y[i]
-end
-
-local function disposeGhost()
-  if ghostRoot then pcall(function () ghostRoot:dispose() end) end
-  ghostRoot, ghostModel, ghostFile, ghostMsg = nil, nil, nil, nil
-end
-
--- the ghost is the car's own 3D model (a light LOD), see-through and outlined
-local function loadGhost()
-  local file, main = str(ref.model), str(ref.mainModel)
-  if file == ghostFile then return end
-  disposeGhost()
-  ghostFile = file
-  if file == '' then ghostMsg = 'no 3D model for this car: showing a marker' return end
-  local ok, err = pcall(function ()
-    ghostRoot = ac.findNodes('carsRoot:yes'):createBoundingSphereNode('ghostlineGhost', 5)
-    ghostRoot:setVisible(false)
-    ghostRoot:loadKN5LODAsync(file, main, function (e, model)
-      if e or not model then ghostMsg = 'model failed: ' .. tostring(e) .. ', showing a marker' return end
-      ghostModel = model
-      pcall(function () model:ensureUniqueMaterials() end)   -- never change the real cars' materials
-      pcall(function () model:setShadows(false):excludeFromCubemap(true):excludeFromSecondary(true) end)
-      pcall(function () model:setTransparent(true):setBlendMode(render.BlendMode.AlphaBlend) end)
-      pcall(function () model:setMaterialProperty('ksAlpha', cfg.alpha) end)
-      pcall(function () model:setOutline(rgbm(0.55, 0.8, 1, 1)) end)
-    end)
-  end)
-  if not ok then ghostRoot, ghostMsg = nil, 'model failed: ' .. tostring(err) .. ', showing a marker' end
 end
 
 local function activate()
@@ -120,9 +95,8 @@ local function activate()
   n, L, step = ref.n, math.max(ref.length, 1), math.max(ref.step, 0.5)
   live = n > 10 and str(ref.car) == carId and str(ref.track) == track
   boards, boardSide, cue.k, gi = {}, {}, -1, 0
-  if not live then disposeGhost() return end
-  Y, Yok = ffi.new('float[?]', n), ffi.new('uint8_t[?]', n)
-  loadGhost()
+  if not live then return end
+  Y, Yok, misses = ffi.new('float[?]', n), ffi.new('uint8_t[?]', n), 0
 end
 
 local function load()
@@ -237,21 +211,11 @@ function M.update(dt, simClock)
   car = ac.getCar(0)
   if not car then return end
   if pend and (not ref or not live or car.lapTimeMs < 3000) then activate() end   -- a new best lap: from the next lap on
-  if not live then
-    ghostOn = false
-    if ghostRoot then pcall(function () ghostRoot:setVisible(false) end) end
-    return
-  end
+  if not live then ghostOn = false return end
   dNow, vNow, lapT = car.splinePosition * L, car.speedKmh / 3.6, car.lapTimeMs / 1000
   updateBoards()   -- also behind the racing line and the countdown
   measureRide()
   updateGhost()
-  if ghostRoot then
-    pcall(function ()
-      ghostRoot:setVisible(ghostOn and ghostModel ~= nil)
-      if ghostOn then ghostRoot:setPosition(gpos); ghostRoot:setOrientation(glook, gup) end
-    end)
-  end
   M.delta = lapT - at(ref.t, dNow)
   if os.preciseClock then
     local cost = (os.preciseClock() - t0) * 1000
@@ -280,44 +244,62 @@ local function lineColour(x)
   return c
 end
 
-local lineDrawn = 0   -- metres of line drawn last frame (shown in the window)
+local lineDrawn, chevrons = 0, 0   -- shown in the window
 
-local function drawLine()
-  local draw = math.min(math.floor(cfg.ahead / step), n - 1)
-  local i0 = math.floor(wrap(dNow + 3) / step)
-  render.setBlendMode(render.BlendMode.AlphaBlend)
-  render.setDepthMode(render.DepthMode.ReadOnlyLessEqual)
-  render.setCullMode(render.CullMode.None)
-  lineDrawn = 0
-  local j = 0
-  while j < draw do
-    local x = ahead(dNow, (i0 + j) * step)
-    local k = x < 40 and 1 or x < 120 and 2 or 4            -- longer pieces further away, where they're tiny anyway
-    k = math.min(k, draw - j)
-    local a, b = (i0 + j) % n, (i0 + j + k) % n
-    local ya, yb = ground(a), ground(b)
-    if not ya or not yb then break end
-    local c = lineColour(x + k * step / 2)
-    -- seen from the cockpit, a flat strip far ahead shrinks to a sliver (and sinks into the road surface), so the line
-    -- gets wider, slightly higher and more opaque with distance; faint right under the car, fading out at the end
-    local xb = x + k * step
-    local ha, hb = math.min(0.35 + 0.006 * x, 2), math.min(0.35 + 0.006 * xb, 2)
-    local alpha = math.min(1, x / 12) * (1 + 0.6 * math.min(1, x / 150)) * math.min(1, (1 - j / draw) * 10)
-    col.r, col.g, col.b, col.mult = c.r, c.g, c.b, math.min(c.mult * alpha, 0.95)
-    local dxa, dza = ref.x[(a + 1) % n] - ref.x[a], ref.z[(a + 1) % n] - ref.z[a]
-    local dxb, dzb = ref.x[(b + 1) % n] - ref.x[b], ref.z[(b + 1) % n] - ref.z[b]
-    local la, lb = math.sqrt(dxa * dxa + dza * dza), math.sqrt(dxb * dxb + dzb * dzb)
-    if la > 0.01 and lb > 0.01 then
-      local pxa, pza, pxb, pzb = -dza / la * ha, dxa / la * ha, -dzb / lb * hb, dxb / lb * hb
-      local lfa, lfb = 0.04 + 0.0025 * x, 0.04 + 0.0025 * xb
-      tmp1:set(ref.x[a] - pxa, ya + lfa, ref.z[a] - pza)
-      tmp2:set(ref.x[a] + pxa, ya + lfa, ref.z[a] + pza)
-      tmp3:set(ref.x[b] + pxb, yb + lfb, ref.z[b] + pzb)
-      tmp4:set(ref.x[b] - pxb, yb + lfb, ref.z[b] - pzb)
-      render.quad(tmp1, tmp2, tmp3, tmp4, col)
-      lineDrawn = xb
+-- is x metres ahead part of a corner (from 120 m before its board to where the best lap was back on full throttle)?
+local function inCorner(x)
+  for _, b in pairs(boards) do
+    if b.apexD then
+      local b0 = b.dist > -1e8 and b.dist or b.apexD - 1
+      if x >= b0 - 120 and x <= b.thrD then return true end
     end
-    j = j + k
+  end
+  return false
+end
+
+-- one chevron pointing along the line: two arms from the back corners to the tip
+local function chevron(px, py, pz, fx, fz, w, len, th, c)
+  local sx, sz = -fz * w / 2, fx * w / 2
+  local tx, tz = px + fx * len / 2, pz + fz * len / 2
+  local bx, bz = px - fx * len / 2, pz - fz * len / 2
+  for side = -1, 1, 2 do
+    local cx, cz = bx + sx * side, bz + sz * side
+    tmp1:set(cx, py, cz); tmp2:set(tx, py, tz)
+    tmp3:set(tx - fx * th, py, tz - fz * th); tmp4:set(cx - fx * th, py, cz - fz * th)
+    render.quad(tmp1, tmp2, tmp3, tmp4, c, nil, true)
+  end
+end
+
+-- the racing line like the F1 games': chevrons along the best lap's line, green = flat out, yellow = lift / get
+-- ready / not yet back on full throttle, red = brake. They grow with distance so the far ones stay readable from
+-- the cockpit. "Corners only" draws just the stretch from before each board to the exit.
+local function drawLine()
+  render.setBlendMode(render.BlendMode.AlphaBlend)
+  render.setDepthMode(render.DepthMode.ReadOnly)
+  render.setCullMode(render.CullMode.None)
+  lineDrawn, chevrons = 0, 0
+  local far = math.min(cfg.ahead, L * 0.45)
+  local x = 6
+  while x < far do
+    local d = dNow + x
+    local i = math.floor(wrap(d) / step) % n
+    local y = ground(i)
+    if not y then break end
+    if not cfg.cornersOnly or inCorner(x) then
+      local px, pz = at(ref.x, d), at(ref.z, d)
+      local fx, fz = at(ref.x, d + 2) - at(ref.x, d - 2), at(ref.z, d + 2) - at(ref.z, d - 2)
+      local fl = math.sqrt(fx * fx + fz * fz)
+      if fl > 0.01 then
+        local c = lineColour(x)
+        local fade = math.min(1, (x - 6) / 10 + 0.15) * math.min(1, (far - x) / (far * 0.15))
+        col.r, col.g, col.b, col.mult = c.r, c.g, c.b, c.mult * fade
+        chevron(px, y + 0.05 + 0.0015 * x, pz, fx / fl, fz / fl,
+          math.min(1.1 + 0.006 * x, 2.6), 0.9 + 0.004 * x, 0.32 + 0.0025 * x, col)
+        chevrons = chevrons + 1
+      end
+    end
+    lineDrawn = x
+    x = x + (x < 50 and 3 or x < 150 and 4.5 or 6)
   end
 end
 
@@ -356,9 +338,9 @@ local function drawBoard(k, b)
   local ox, oz = -dz * (half + 1.2) * side, dx * (half + 1.2) * side
   boardDir:set(-dx, 0, -dz)
   tmp2:set(x + ox, y + 1.9, z + oz)
-  render.rectangle(tmp2, boardDir, 1.3, 1.9, boardCols[b.stage])           -- the sign
+  render.rectangle(tmp2, boardDir, 1.3, 1.9, boardCols[b.stage], true)     -- the sign
   tmp3:set(x + ox, y + 0.5, z + oz)
-  render.rectangle(tmp3, boardDir, 0.12, 1.0, boardCols[0])               -- its post
+  render.rectangle(tmp3, boardDir, 0.12, 1.0, boardCols[0], true)         -- its post
   if b.dist and b.dist < 600 then
     tmp1:set(x + ox, y + 3.3, z + oz)
     local gear = ref.cGear[k] > 0 and tostring(ref.cGear[k]) or ''
@@ -367,13 +349,41 @@ local function drawBoard(k, b)
   end
 end
 
-local function drawMarker()   -- the ghost without a 3D model: a see-through footprint
-  local lx, lz = glook.x, glook.z
-  local sx, sz = -lz * 0.95, lx * 0.95
-  local y = gpos.y - ride + 0.06
-  tmp1:set(gpos.x - sx - lx * 2.2, y, gpos.z - sz - lz * 2.2); tmp2:set(gpos.x + sx - lx * 2.2, y, gpos.z + sz - lz * 2.2)
-  tmp3:set(gpos.x + sx + lx * 2.2, y, gpos.z + sz + lz * 2.2); tmp4:set(gpos.x - sx + lx * 2.2, y, gpos.z - sz + lz * 2.2)
-  render.quad(tmp1, tmp2, tmp3, tmp4, rgbm(0.55, 0.8, 1, cfg.alpha))
+local ghostMesh, ghostVals = nil, { gTint = vec3(0.24, 0.94, 1), gAlpha = 0.35 }
+-- the ghost: your car's own shape (CSP's simple car mesh), see-through cyan with brighter edges. It fades out when
+-- it's on top of you, so it never fogs up the cockpit.
+local function drawGhost()
+  if ghostMesh == nil then
+    local ok, m = pcall(ac.SimpleMesh.carShape, 0, true)
+    ghostMesh = ok and m or false
+  end
+  local dx, dy, dz = gpos.x - car.position.x, gpos.y - car.position.y, gpos.z - car.position.z
+  local near = math.min(1, math.max(0, (math.sqrt(dx * dx + dy * dy + dz * dz) - 2) / 6))
+  if near <= 0 then return end
+  render.setBlendMode(render.BlendMode.AlphaBlend)
+  render.setDepthMode(render.DepthMode.ReadOnly)
+  if ghostMesh then
+    ghostVals.gAlpha = cfg.alpha * near
+    render.setCullMode(render.CullMode.Back)
+    render.mesh({
+      mesh = ghostMesh, transform = mat4x4.look(gpos, glook, gup), textures = {}, values = ghostVals, cacheKey = 7151,
+      shader = [[
+        float4 main(PS_IN pin) {
+          float3 n = normalize(pin.NormalW);
+          float edge = 1 - saturate(abs(dot(n, normalize(-pin.PosC))));
+          float3 c = gTint * (0.45 + 0.35 * (n.y * 0.5 + 0.5) + 1.2 * edge * edge);
+          return float4(c * gWhiteRefPoint, saturate(gAlpha * (0.55 + 1.4 * edge * edge)) * pin.FogAlphaMultiplier());
+        }
+      ]]
+    })
+  else   -- no car shape available: a see-through footprint on the road
+    local lx, lz = glook.x, glook.z
+    local sx, sz = -lz * 0.95, lx * 0.95
+    local y = gpos.y - ride + 0.06
+    tmp1:set(gpos.x - sx - lx * 2.2, y, gpos.z - sz - lz * 2.2); tmp2:set(gpos.x + sx - lx * 2.2, y, gpos.z + sz - lz * 2.2)
+    tmp3:set(gpos.x + sx + lx * 2.2, y, gpos.z + sz + lz * 2.2); tmp4:set(gpos.x - sx + lx * 2.2, y, gpos.z - sz + lz * 2.2)
+    render.quad(tmp1, tmp2, tmp3, tmp4, rgbm(0.24, 0.94, 1, cfg.alpha * near), nil, true)
+  end
 end
 
 function M.draw()
@@ -382,10 +392,10 @@ function M.draw()
   if cfg.line then drawLine() end
   if cfg.boards then
     render.setBlendMode(render.BlendMode.AlphaBlend)
-    render.setDepthMode(render.DepthMode.ReadOnlyLessEqual)
+    render.setDepthMode(render.DepthMode.ReadOnly)
     for k, b in pairs(boards) do drawBoard(k, b) end
   end
-  if ghostOn and not ghostModel then drawMarker() end
+  if ghostOn then drawGhost() end
   if ghostOn and M.delta then
     tmp1:set(gpos.x, gpos.y + 1.8, gpos.z)
     render.debugText(tmp1, string.format('%+.2f', M.delta), rgbm(0.55, 0.8, 1, 0.9), 1.1)
@@ -418,9 +428,9 @@ function M.window()
   else
     ui.text('Coaching vs ' .. laptime(ref.lapMs) .. ' by ' .. str(ref.driver) .. (ref.est ~= 0 and ' (brake points estimated)' or ''))
     if M.delta then ui.text(string.format('Delta: %+.2f s', M.delta)) end
-    if ghostMsg then ui.text(ghostMsg) end
     if drawErr then ui.text('Drawing stopped: ' .. drawErr) end
-    if cfg.line then ui.text(string.format('Racing line: %.0f m ahead drawn', lineDrawn)) end
+    if cfg.line then ui.text(string.format('Racing line: %d chevrons, %.0f m ahead, road not found %d times', chevrons, lineDrawn, misses)) end
+    if ghostMesh == false then ui.text('Ghost: no car shape from CSP, showing a footprint') end
   end
   if ui.checkbox('Brake boards', cfg.boards) then cfg.boards = not cfg.boards end
   ui.sameLine()
@@ -428,15 +438,17 @@ function M.window()
   if ui.checkbox('Racing line', cfg.line) then cfg.line = not cfg.line end
   ui.sameLine()
   if ui.checkbox('3D ghost', cfg.ghost) then cfg.ghost = not cfg.ghost end
+  if cfg.line then
+    if ui.radioButton('Full line', not cfg.cornersOnly) then cfg.cornersOnly = false end
+    ui.sameLine()
+    if ui.radioButton('Corners only', cfg.cornersOnly) then cfg.cornersOnly = true end
+  end
   local v, c = ui.slider('##ahead', cfg.ahead, 50, 400, 'Racing line: %.0f m ahead', true)
   if c then cfg.ahead = math.floor(v) end
   v, c = ui.slider('##lead', cfg.lead, 0, 250, 'Sound early by: %.0f ms', true)
   if c then cfg.lead = math.floor(v) end
   v, c = ui.slider('##alpha', cfg.alpha, 0.1, 0.8, 'Ghost: %.2f opacity', true)
-  if c then
-    cfg.alpha = v
-    if ghostModel then pcall(function () ghostModel:setMaterialProperty('ksAlpha', v) end) end
-  end
+  if c then cfg.alpha = v end
   if clock >= perf.due and perf.n > 0 then
     perf.due = clock + 2
     perf.text = string.format('Coaching: %.3f ms avg, %.2f max per frame', perf.sum / perf.n, perf.max)
@@ -451,6 +463,8 @@ function M.info()
   return { lapMs = ref.lapMs, driver = str(ref.driver), est = ref.est ~= 0, delta = M.delta,
            brake = at(ref.brake, dNow), throttle = at(ref.throttle, dNow) }
 end
+
+M.cfg = cfg
 
 M.state = function () return { live = live, boards = boards, cue = cue, ghostOn = ghostOn, gpos = gpos, glook = glook,
   gup = gup, ref = ref, dNow = dNow, n = n, L = L } end

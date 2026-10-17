@@ -61,7 +61,7 @@ if not okCoach then okCoach, coach = pcall(dofile, (__dirname or '.') .. '/coach
 local coachErr = not okCoach and tostring(coach) or nil
 if not okCoach then coach = nil end
 
--- the dash (hud.lua): gear, delta, timing, pedals, tyres, standings, each its own window
+-- the dash (hud.lua): one horizontal window with standings, timing, gear + delta, pedals and tyres
 local okHud, hud = pcall(require, 'hud')
 if not okHud then okHud, hud = pcall(dofile, (__dirname or '.') .. '/hud.lua') end
 local hudErr = not okHud and tostring(hud) or nil
@@ -217,9 +217,4 @@ function script.windowMain(dt)
   end
 end
 
-function script.windowGear(dt) runHud('gear') end
-function script.windowDelta(dt) runHud('delta') end
-function script.windowTiming(dt) runHud('timing') end
-function script.windowPedals(dt) runHud('pedals') end
-function script.windowTyres(dt) runHud('tyres') end
-function script.windowStandings(dt) runHud('standings') end
+function script.windowDash(dt) runHud('dash') end

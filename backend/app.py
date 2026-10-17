@@ -141,6 +141,10 @@ def _resolve(a, b, ideal):
         if not refs:
             raise HTTPException(404, "no reference lap for this track yet")
         b = refs[0]["id"]
+    if ideal:
+        me = store.get_lap(a)
+        if not analysis.player_best_ids(me["car"], me["track"]):
+            raise HTTPException(404, "no laps of yours with this car on this track yet")
     version = store.q("SELECT COUNT(*) n FROM laps")[0]["n"] if ideal else 0   # ideal changes as laps arrive
     return _compare(a, b, ideal, version), b
 

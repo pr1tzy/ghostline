@@ -129,7 +129,7 @@ def find_corners(ref):
     for i in idx:                                    # merge chicane halves
         if mins and (i - mins[-1]) * STEP < 200:
             if s[i] < s[mins[-1]]:
-                mins[-1] = i
+                mins[-1] = int(i)   # a numpy int here once made the compare API fail to serialise
         else:
             mins.append(int(i))
     if not mins:

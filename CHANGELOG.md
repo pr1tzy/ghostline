@@ -4,16 +4,19 @@
 
 A full dash inside the game, so Ghostline is the only app you need.
 
-- **Six panels**, each switched on and placed on its own from the CSP app bar: Gear (rev bar, gear, speed, ABS /
-  TC / bias / DRS), Delta (to the best lap or your session best, predicted lap), Timing (lap, sectors, last / best /
-  ghost, position, fuel and laps left, session time), Pedals (with the best lap's brake and throttle at the same
-  spot, a 4 second trace and steering), Tyres (temperatures against the tyre's optimum, pressure, wear, brakes) and
-  Standings (relative with live gaps, or the full order).
-- In Ghostline's own style and fonts: solid panels with cut corners, violet for you, cyan for the ghost.
+- **One horizontal dash** (Ghostline Dash) with five sections you can switch off one by one: Standings (relative
+  with live gaps, or the full order), Timing (lap, sectors, last / best / ghost, position, fuel and laps left), Gear
+  + delta (rev bar, gear, speed, ABS / TC / bias / DRS, gap to the best lap or session best, predicted lap), Pedals
+  (with the best lap's brake and throttle at the same spot, a 4 second trace and steering) and Tyres (temperatures
+  against the tyre's optimum, pressure, wear, brakes).
+- In Ghostline's own style and fonts: a solid slab with cut corners and hairlines, violet for you, cyan for the ghost.
 - **Brake boards stay put**: one sign per corner, on the outside, where the best lap braked. The countdown still
   comes from your speed.
-- **Racing line visible far ahead**: it's drawn wider, a little higher and more opaque with distance, so it no
-  longer seems to stop under the car.
+- **Racing line like the F1 games'**: chevrons along the best lap's line, green / yellow / red, full or corners
+  only. It was invisible before: the 3D world is HDR, and the colours now go through CSP's white point.
+- **3D ghost is your car's shape** in see-through cyan (CSP's car mesh), fading out when it's on top of you.
+- **Compare no longer fails** on laps where a chicane's two halves were merged into one corner, and the ideal-lap
+  compare says "no laps of yours yet" instead of failing for cars you haven't driven.
 
 ## 2.2.0
 

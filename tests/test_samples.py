@@ -36,6 +36,13 @@ assert not content.supported("rss_formula_hybrid_2021", "monza") and not content
 local = TestClient(app, base_url=f"http://127.0.0.1:{PORT}", client=("127.0.0.1", 50000))
 public = TestClient(app, base_url=f"http://127.0.0.1:{PORT}", client=("127.0.0.1", 50000),
                     headers={"cf-connecting-ip": "203.0.113.9"})
+# the compare API for every sample lap, against its reference and against your ideal lap: never a 500
+for l in laps:
+    r = local.get(f"/api/compare?a={l['id']}")
+    assert r.status_code == 200, (l, r.status_code)
+    r = local.get(f"/api/compare?a={l['id']}&ideal=true")
+    mine = analysis.player_best_ids(store.get_lap(l["id"])["car"], l["track"])
+    assert r.status_code == (200 if mine else 404), (l, r.status_code)
 for p in ("/", "/laps", "/stats", "/live", "/refs", f"/compare/{laps[0]['id']}"):
     assert local.get(p).status_code == 200, p
 assert local.get("/nope").status_code == 404

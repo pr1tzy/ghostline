@@ -1,6 +1,7 @@
 """The dash (ac_app/GhostlineLogger/hud.lua) under real LuaJIT, via lupa, with a fake CSP UI that records every draw
-call: every panel must draw without errors in normal and awkward states, and the gaps between cars must be right.
-With --png DIR it also renders each panel to a PNG (Pillow, the real fonts) to check the design outside the game.
+call: every section must draw without errors in normal and awkward states, sections switch on and off, clicks land
+in the right section, and the gaps between cars must be right. With --png DIR it also renders the dash to a PNG
+(Pillow, the real fonts) to check the design outside the game.
 Offline; needs `pip install lupa` (skipped without it)."""
 import math
 import sys
@@ -58,8 +59,8 @@ ui = {
   measureDWriteText = function (s, size) return vec2(pyMeasure(font, s, size), size) end,
   dwriteDrawText = function (s, size, p, c) rec({ 'text', s, size, p.x, p.y, col(c), font }) end,
   dwriteDrawTextClipped = function (s, size, a, b, h, v, wrap, c) rec({ 'text', s, size, a.x, a.y, col(c), font, b.x - a.x }) end,
-  windowHovered = function () return clickNext end,
-  mouseClicked = function () local c = clickNext; clickNext = false; return c end,
+  rectHovered = function (a, b) return mouse and mouse.x >= a.x and mouse.x <= b.x and mouse.y >= a.y and mouse.y <= b.y end,
+  mouseClicked = function () return clickNext end,
   separator = function () end, text = function (s) lastText = s end,
   slider = function (l, v) return v, false end,
 }
@@ -97,12 +98,11 @@ hud.setCoach({ info = function () return ghostInfo end })
 ghostInfo = { lapMs = 109876, driver = 'Max Lindqvist', est = true, delta = -0.214, brake = 0.35, throttle = 0.0 }
 """ % (str(APP).replace("\\", "/"), str(APP).replace("\\", "/")))
 g = lua.globals()
-PANELS = ("gear", "delta", "timing", "pedals", "tyres", "standings")
 
 
-def run(name):
+def run():
     g.calls = lua.table()
-    lua.eval(f"hud.{name}")()
+    g.hud.dash()
     out = [list(c.values()) for c in g.calls.values()]
     return out
 
@@ -123,7 +123,7 @@ for step in range(60 * 130):   # a bit over a lap
         c = g.cars[i]
         c.splinePosition, c.lapCount = (d / L) % 1, int(d // L)
     g.hud.update(dt)
-rel = run("standings")
+rel = run()
 row_text = texts(rel)
 assert "RELATIVE" in row_text and "pr1tzy" in row_text, row_text[:12]
 me = start[0] * L + speeds[0] * t
@@ -145,16 +145,13 @@ for i in range(1, 8):
 assert checked >= 4, checked
 print(f"relative gaps match distance / speed ({checked} cars)")
 
-# ---- every panel, in normal and awkward states ----
-for name in PANELS:
-    calls = run(name)
-    assert calls and calls[0][0] == b"size", name
-gear_t = texts(run("gear"))
-assert "5" in gear_t and "247" in gear_t and "ABS 3" in gear_t and "TC 2" in gear_t, gear_t
-delta_t = texts(run("delta"))
-assert any(s.startswith("VS BEST LAP") for s in delta_t), delta_t
-timing_t = texts(run("timing"))
-assert "31.012" in timing_t and "S3" in timing_t and "GHOST" in timing_t, timing_t
+# ---- every section, in normal and awkward states ----
+calls = run()
+assert calls[0][0] == b"size" and abs(calls[0][1] - (344 + 290 + 300 + 220 + 236)) < 1, calls[0]
+t_all = texts(calls)
+for want in ("5", "247", "ABS 3", "TC 2", "31.012", "S3", "GHOST", "TYRES  C / PSI", "RELATIVE"):
+    assert want in t_all, want
+assert any(s.startswith("VS BEST LAP") for s in t_all)
 lua.execute("""
 ghostInfo = nil
 local c = cars[0]
@@ -163,14 +160,26 @@ c.currentSplits, c.bestSplits, c.absMode, c.tractionControlMode, c.brakeBias = s
 c.wheels[2] = nil
 sim.sessionTimeLeft, sim.raceSessionType = 0, 3
 """)
-for name in PANELS:
-    run(name)
-assert "R" in texts(run("gear")) and "INVALID" in texts(run("timing"))
-g.clickNext = True
-run("standings")
-assert "STANDINGS" in texts(run("standings")), "click switches relative / full order"
-lua.execute("hud.cfg.board = false; clickNext = false")
-print("all panels draw in normal and awkward states")
+t_all = texts(run())
+assert "R" in t_all and "INVALID" in t_all
+# clicks: on the standings section it switches relative / full order; on the delta it switches the reference
+lua.execute("mouse = vec2(100, 100); clickNext = true")
+run()
+lua.execute("clickNext = false")
+assert "STANDINGS" in texts(run()) and not g.hud.cfg.deltaRef == "session"
+lua.execute("mouse = vec2(344 + 290 + 100, 150); clickNext = true")
+run()
+lua.execute("clickNext = false; mouse = nil; hud.cfg.board = false")
+assert g.hud.cfg.deltaRef == b"session" or g.hud.cfg.deltaRef == "session", g.hud.cfg.deltaRef
+lua.execute("hud.cfg.deltaRef = 'ghost'")
+# sections switch off: the dash shrinks to what's left, and says so when nothing is
+lua.execute("hud.cfg.standings, hud.cfg.timing, hud.cfg.pedals = false, false, false")
+assert abs(run()[0][1] - (300 + 236)) < 1
+lua.execute("hud.cfg.drive, hud.cfg.tyres = false, false")
+run()
+assert b"switched off" in g.lastText
+lua.execute("for _, k in ipairs({ 'standings', 'timing', 'drive', 'pedals', 'tyres' }) do hud.cfg[k] = true end")
+print("dash draws in normal and awkward states; clicks and section switches work")
 
 # ---- optional: render each panel to a PNG to review the design ----
 if "--png" in sys.argv:
@@ -188,8 +197,8 @@ if "--png" in sys.argv:
     fonts = {}
     rgba = lambda c: tuple(int(round(min(max(x, 0), 1) * 255)) for x in (c[0], c[1], c[2], c[3] if len(c) > 3 else 1))
     sheet = []
-    for name in PANELS:
-        calls = run(name)
+    for name in ("dash",):
+        calls = run()
         w, h = int(calls[0][1]), int(calls[0][2])
         img = Image.new("RGB", (w + 40, h + 40), (60, 66, 58))   # a grey-green, like a track backdrop
         dr = ImageDraw.Draw(img, "RGBA")
@@ -217,13 +226,5 @@ if "--png" in sys.argv:
                         s = s[:-1]
                 dr.text((x + o, y + o), s, font=f, fill=rgba(col), anchor="la")
         img.save(out / f"{name}.png")
-        sheet.append(img)
-    W = max(i.width for i in sheet)
-    Hs = sum(i.height for i in sheet)
-    full = Image.new("RGB", (W, Hs), (60, 66, 58))
-    y = 0
-    for i in sheet:
-        full.paste(i, (0, y)); y += i.height
-    full.save(out / "dash.png")
     print("previews:", out)
 print("hud ok")
