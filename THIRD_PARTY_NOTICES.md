@@ -6,11 +6,11 @@ Ghostline's own code is MIT licensed (see [LICENSE](LICENSE)). It ships or uses 
 
 | Font | Files | License text |
 |------|-------|--------------|
-| Grotesk (Gras), Frank Adebiaye | `frontend/fonts/Grotesk-Gras.woff2`, `backend/assets/Grotesk-Gras.otf` | `frontend/fonts/Grotesk-LICENSE.txt` |
-| Lack, Adrien Midzic | `frontend/fonts/Lack-Regular.woff2` | `frontend/fonts/Lack-LICENSE.txt` |
-| Sligoil, Ariel Martín Pérez | `frontend/fonts/Sligoil-*.woff2`, `backend/assets/Sligoil-MicroBold.otf` | `frontend/fonts/sligoil-LICENSE.txt` |
+| Grotesk (Gras), Frank Adebiaye | `frontend/fonts/Grotesk-Gras.woff2`, `backend/assets/Grotesk-Gras.otf`, `ac_app/GhostlineLogger/fonts/Grotesk-Gras.ttf` | `frontend/fonts/Grotesk-LICENSE.txt` |
+| Lack, Adrien Midzic | `frontend/fonts/Lack-Regular.woff2`, `ac_app/GhostlineLogger/fonts/Lack-Regular.ttf` | `frontend/fonts/Lack-LICENSE.txt` |
+| Sligoil, Ariel Martín Pérez | `frontend/fonts/Sligoil-*.woff2`, `backend/assets/Sligoil-MicroBold.otf`, `ac_app/GhostlineLogger/fonts/Sligoil-*.ttf` | `frontend/fonts/sligoil-LICENSE.txt` |
 
-The fonts are converted to woff2 and served unmodified otherwise. They stay under the OFL; the MIT license does not
+The fonts are converted to woff2 (site) and TrueType (in-game dash, with their license texts next to them) and served unmodified otherwise. They stay under the OFL; the MIT license does not
 apply to them.
 
 ## JavaScript (vendored in `frontend/vendor`)
