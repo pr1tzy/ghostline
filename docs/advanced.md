@@ -76,6 +76,9 @@ page moves every car at its current pace, so the map stays smooth even at low ra
 - **Cut detection**: the game doesn't share other drivers' penalties, so each ghost lap is compared with your own
   best clean line. More than 15 m off it, or more than 20 m shorter, and it's dropped. This needs one clean lap of
   your own on that track first.
+- **Online lag**: when a remote car lags, the game teleports it to catch up. A lap where the car moves 25 m or more
+  at over 1.6x its own speed is marked invalid ("position jumps from connection lag"): as a ghost it would leap
+  ahead and make your gap jump by a second. Laps stored before 2.3 are checked once at startup.
 - **Estimated pedals**: throttle and brake for other cars are estimated from their speed, and shown dotted.
 
 ## In-game coaching

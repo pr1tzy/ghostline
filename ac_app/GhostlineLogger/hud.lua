@@ -512,6 +512,8 @@ local function mapBody()
   local W = MAP_W
   if not trackPts then buildTrack() end
   text(F.text, 'MAP', 10, 14, 12, C.mute)
+  local status = coach and coach.ghostStatus or ''   -- where the ghost is, or why it isn't shown
+  if status ~= '' and status ~= 'off' then clipText(F.num, ('GHOST ' .. status):upper(), 9, 50, 13, W - 64, C.ghost) end
   if not trackPts then return end
   local x0, x1, z0, z1 = trackBox[1], trackBox[2], trackBox[3], trackBox[4]
   local box, top = W - 28, 32

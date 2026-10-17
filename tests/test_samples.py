@@ -28,6 +28,27 @@ for track in ("monza", "spa"):
     assert abs(c["total"] - (me["lap_ms"] - ghost["lap_ms"]) / 1000) < 0.3, (track, c["total"])
     print(f"{track}: {c['total']:+.3f}s, {len(c['corners'])} corners, worst {c['insights'][0]['corner']}")
 
+# online lag: a lap where the car jumps ahead faster than it was going is caught (and never becomes a ghost)
+import numpy as np  # noqa: E402
+for l in laps:
+    raw = store.load_lap(l["id"])
+    assert analysis.position_jumps(l["track"], raw["t"], raw["pos"], raw["speed"], raw["x"], raw["z"])[0] == 0, l
+g = next(l for l in laps if l["source"] == "online" and l["track"] == "monza")
+raw = store.load_lap(g["id"])
+k = len(raw["pos"]) // 2
+pos = raw["pos"].copy()
+pos[k:] = (pos[k:] + 150 / analysis.track_length("monza")) % 1      # teleported 150 m ahead in one sample
+n, skipped = analysis.position_jumps("monza", raw["t"], pos, raw["speed"], raw["x"], raw["z"])
+assert n == 1 and 140 < skipped < 160, (n, skipped)
+cols = ["t", "pos", "speed", "x", "z"]
+a = np.c_[raw["t"], pos, raw["speed"], raw["x"], raw["z"]]
+lid = ingest.ingest_rows({"source": "online", "driver": "Lag Test", "car": "lotus_exos_125_s1", "track": "monza",
+                          "lap_ms": 90000}, cols, a, origin="test:lag")
+bad = store.get_lap(lid)
+assert bad["valid"] == 0 and "connection lag" in bad["note"], bad
+store.delete_lap(lid)
+laps = store.q("SELECT id, source, track, lap_ms, valid FROM laps ORDER BY id")
+
 # official content only
 assert content.supported("lotus_exos_125_s1", "monza") and content.supported("ks_ferrari_488_gt3", "ks_nordschleife-nordschleife")
 assert not content.supported("rss_formula_hybrid_2021", "monza") and not content.supported("lotus_exos_125_s1", "some_mod_track")

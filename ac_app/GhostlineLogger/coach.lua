@@ -439,7 +439,7 @@ local function drawGhost()
   render.setDepthMode(render.DepthMode.ReadOnly)
   if ghostMesh then
     ghostVals.gAlpha = cfg.alpha * near
-    render.setCullMode(render.CullMode.Back)
+    render.setCullMode(render.CullMode.None)   -- both sides: stays visible even if the shape comes out mirrored
     render.mesh({
       mesh = ghostMesh, transform = mat4x4.look(gpos, glook, gup), textures = {}, values = ghostVals, cacheKey = 7151,
       shader = [[
@@ -459,6 +459,13 @@ local function drawGhost()
     tmp3:set(gpos.x + sx + lx * 2.2, y, gpos.z + sz + lz * 2.2); tmp4:set(gpos.x - sx + lx * 2.2, y, gpos.z - sz + lz * 2.2)
     render.quad(tmp1, tmp2, tmp3, tmp4, rgbm(0.24, 0.94, 1, cfg.alpha * near), nil, true)
   end
+  -- a cyan diamond above it, facing you from behind, so you can find the ghost from far back
+  local sx, sz = -glook.z * 0.35, glook.x * 0.35
+  local cy = gpos.y - ride + 2.3
+  tmp1:set(gpos.x, cy + 0.4, gpos.z); tmp2:set(gpos.x + sx, cy, gpos.z + sz)
+  tmp3:set(gpos.x, cy - 0.4, gpos.z); tmp4:set(gpos.x - sx, cy, gpos.z - sz)
+  render.setCullMode(render.CullMode.None)
+  render.quad(tmp1, tmp2, tmp3, tmp4, rgbm(0.24, 0.94, 1, 0.9 * near), nil, true)
 end
 
 function M.draw()
@@ -472,7 +479,7 @@ function M.draw()
   end
   if ghostOn then drawGhost() end
   if ghostOn and M.delta and not cfg.ghostMine then
-    tmp1:set(gpos.x, gpos.y + 1.8, gpos.z)
+    tmp1:set(gpos.x, gpos.y - ride + 3.1, gpos.z)
     render.debugText(tmp1, string.format('%+.2f', M.delta), rgbm(0.55, 0.8, 1, 0.9), 1.1)
   end
   if os.preciseClock then

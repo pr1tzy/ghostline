@@ -88,7 +88,8 @@ render = {
   on = function (name, fn) drawFn = fn end,
   glBegin = function () end, glEnd = function () end,
   glVertex = function () end,
-  quad = function (a, b, c, d, col) drawn.line[#drawn.line + 1] = { (a.x + b.x) / 2, (a.z + b.z) / 2, col.g } end,
+  -- racing line chevrons only (the ghost's marker is cyan: blue channel 1)
+  quad = function (a, b, c, d, col) if col.b < 0.9 then drawn.line[#drawn.line + 1] = { (a.x + b.x) / 2, (a.z + b.z) / 2, col.g } end end,
   debugText = function (p, s) drawn.text[#drawn.text + 1] = s end,
   rectangle = function (p, dir, w, h) drawn.posts = (drawn.posts or 0) + 1 end,
 }

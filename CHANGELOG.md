@@ -18,6 +18,10 @@ A full dash inside the game, so Ghostline is the only app you need.
   it moves earlier when you're faster. The board stays where the best lap braked.
 - **3D ghost is your car's shape** in see-through cyan (CSP's car mesh), fading out when it's on top of you. New:
   a ghost of your own session best, it shows up to 1 km away, and the window says where it is.
+- **Ghost laps with online lag are thrown out.** A remote car that lags gets teleported ahead; one such lap was
+  the Monza "best" (1:16.8, 861 m of jumps) and made the ghost rocket after the chicane and the gap jump by a second.
+  Such laps are now marked invalid, including ones already stored.
+- **Easier to find the ghost**: a cyan marker above it, drawn from both sides, and where it is on the dash map.
 - **More on the dash**: a track map with every car and the ghost, race flags (bar along the top), pit limiter, tyre
   compound, damage, and fuel left at the flag in races.
 - **Compare no longer fails** on laps where a chicane's two halves were merged into one corner, and the ideal-lap

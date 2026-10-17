@@ -173,6 +173,12 @@ def ingest_rows(meta, header, a, origin):
         chk = analysis.line_check(track, a[:, header.index("x")], a[:, header.index("z")])
         if chk and chk["cut"]:
             valid, note = 0, json.dumps({"cut": f"off line {chk['dev']} m at {analysis.corner_at(track, chk['at'])}"})
+    if valid and meta.get("source") in ("online", "ai") and all(k in header for k in ("t", "pos", "speed")):
+        col = lambda k: a[:, header.index(k)]
+        n, skipped = analysis.position_jumps(track, col("t"), col("pos"), col("speed"),
+                                             col("x") if "x" in header else None, col("z") if "z" in header else None)
+        if n:
+            valid, note = 0, json.dumps({"cut": f"position jumps from connection lag ({n}, {skipped:.0f} m)"})
     return store.add_lap(
         {"source": meta.get("source", "import"), "driver": meta.get("driver", ""), "car": meta.get("car", "unknown"),
          "track": track, "lap_ms": int(float(meta.get("lap_ms", a[-1, 0] * 1000))),
@@ -214,6 +220,7 @@ class Watcher(threading.Thread):
         try:
             load_samples()
             recheck_ghosts()
+            recheck_jumps()
             explain_my_invalid_laps()
         except Exception as e:
             print("recheck failed", e)
@@ -269,6 +276,21 @@ def recheck_ghosts():
         except Exception:
             pass
     store.kv_set("cut_check", CUT_CHECK_VERSION)
+
+
+def recheck_jumps():
+    """One-time (2.3): other drivers' laps already stored with position jumps from online lag are marked invalid,
+    so they're never a ghost or a reference again (one of them made the ghost leap ahead after Monza's chicane)."""
+    if store.kv_get("jump_check"):
+        return
+    for l in store.q("SELECT id, track FROM laps WHERE source IN ('online','ai') AND valid=1"):
+        raw = store.load_lap(l["id"])
+        if all(k in raw for k in ("t", "pos", "speed")):
+            n, skipped = analysis.position_jumps(l["track"], raw["t"], raw["pos"], raw["speed"], raw.get("x"), raw.get("z"))
+            if n:
+                note = json.dumps({"cut": f"position jumps from connection lag ({n}, {skipped:.0f} m)"})
+                store.q("UPDATE laps SET valid=0, note=? WHERE id=?", (note, l["id"]))
+    store.kv_set("jump_check", 1)
 
 
 # ---------- Real-world reference (OpenF1: free, seasons from 2023, no extra packages) ----------

@@ -418,6 +418,20 @@ def _off(c, dist):
     return abs(c[0] - dist)
 
 
+def position_jumps(track, t, pos, speed, x=None, z=None):
+    """Where another driver's car jumped ahead faster than it was going: online lag makes the game teleport a remote
+    car to catch up, and a lap with jumps would make a ghost that leaps forward (and a gap that jumps by a second).
+    Returns (number of jumps, metres skipped): moves of 25 m+ at more than 1.6x the car's own speed."""
+    raw = {"x": x, "z": z} if x is not None else None
+    L = track_length(track, raw)
+    d = np.unwrap(np.asarray(pos, float) * 2 * np.pi) / (2 * np.pi) * L
+    dt, dd = np.diff(np.asarray(t, float)), np.diff(d)
+    sp = np.asarray(speed, float)
+    v = np.maximum((sp[1:] + sp[:-1]) / 2 / 3.6, 5)
+    bad = (dd > 25) & (dd / np.maximum(dt, 1e-3) > 1.6 * v)
+    return int(bad.sum()), float(dd[bad].sum())
+
+
 def cut_reason(track, x, z, off_pos=None):
     """Plain words for why a lap is invalid: a shortcut through a corner, or wheels off somewhere."""
     chk = line_check(track, x, z)
