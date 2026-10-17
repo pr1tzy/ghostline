@@ -1,11 +1,19 @@
 # Changelog
 
-## 2.2.1
+## 2.3.0
 
-- **Racing line readable further ahead.** From the cockpit a flat line far ahead shrank to a sliver, so it seemed to
-  stop under the car. It now gets wider, slightly higher and more opaque with distance.
-- **Upright brake boards.** Tall posts each side of the road at the brake point (coloured with the countdown), and
-  shorter posts 100 m and 50 m before it, like a real track's distance boards.
+A full dash inside the game, so Ghostline is the only app you need.
+
+- **Six panels**, each switched on and placed on its own from the CSP app bar: Gear (rev bar, gear, speed, ABS /
+  TC / bias / DRS), Delta (to the best lap or your session best, predicted lap), Timing (lap, sectors, last / best /
+  ghost, position, fuel and laps left, session time), Pedals (with the best lap's brake and throttle at the same
+  spot, a 4 second trace and steering), Tyres (temperatures against the tyre's optimum, pressure, wear, brakes) and
+  Standings (relative with live gaps, or the full order).
+- In Ghostline's own style and fonts: solid panels with cut corners, violet for you, cyan for the ghost.
+- **Brake boards stay put**: one sign per corner, on the outside, where the best lap braked. The countdown still
+  comes from your speed.
+- **Racing line visible far ahead**: it's drawn wider, a little higher and more opaque with distance, so it no
+  longer seems to stop under the car.
 
 ## 2.2.0
 

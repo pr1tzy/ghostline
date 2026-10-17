@@ -33,5 +33,7 @@ jobs:
         run: python tests/test_lua_app.py
       - name: In-game coaching (LuaJIT)
         run: python tests/test_coach.py
+      - name: In-game dash (LuaJIT)
+        run: python tests/test_hud.py
       - name: Dependency audit
         run: python -m pip_audit -r requirements.txt

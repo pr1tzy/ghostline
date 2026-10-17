@@ -61,9 +61,22 @@ if not okCoach then okCoach, coach = pcall(dofile, (__dirname or '.') .. '/coach
 local coachErr = not okCoach and tostring(coach) or nil
 if not okCoach then coach = nil end
 
+-- the dash (hud.lua): gear, delta, timing, pedals, tyres, standings, each its own window
+local okHud, hud = pcall(require, 'hud')
+if not okHud then okHud, hud = pcall(dofile, (__dirname or '.') .. '/hud.lua') end
+local hudErr = not okHud and tostring(hud) or nil
+if not okHud then hud = nil elseif coach then hud.setCoach(coach) end
+
 local function runCoach(fn, ...)
   local ok, err = pcall(fn, ...)
   if not ok then coach, coachErr = nil, tostring(err) end
+end
+
+local panelErr = {}
+local function runHud(name, ...)
+  if not hud then return end
+  local ok, err = pcall(hud[name], ...)
+  if not ok then panelErr[name] = tostring(err) end   -- one broken panel doesn't take the others down
 end
 
 local function open()
@@ -126,6 +139,7 @@ end
 function script.update(dt)
   clock = clock + dt
   if coach then runCoach(coach.update, dt, clock) end
+  if hud then runHud('update', dt) end
   if not d then
     if clock < checkDue or not open() then checkDue = clock + 5 return end
   end
@@ -174,6 +188,8 @@ function script.windowMain(dt)
   ui.text('Ghostline: ' .. status)
   if perfText ~= '' then ui.text(perfText) end
   if coach then runCoach(coach.window) elseif coachErr then ui.text('Coaching stopped: ' .. coachErr) end
+  if hud then runHud('settings') elseif hudErr then ui.text('Dash failed to load: ' .. hudErr) end
+  for name, err in pairs(panelErr) do ui.text('Dash ' .. name .. ': ' .. err) end
   if not w or w.magic ~= WANT_MAGIC then
     ui.text('Settings appear once Ghostline is running.')
     return
@@ -200,3 +216,10 @@ function script.windowMain(dt)
     request(edit[1], edit[2], edit[3], edit[4], edit[5])
   end
 end
+
+function script.windowGear(dt) runHud('gear') end
+function script.windowDelta(dt) runHud('delta') end
+function script.windowTiming(dt) runHud('timing') end
+function script.windowPedals(dt) runHud('pedals') end
+function script.windowTyres(dt) runHud('tyres') end
+function script.windowStandings(dt) runHud('standings') end

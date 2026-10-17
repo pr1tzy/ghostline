@@ -1,4 +1,5 @@
--- Ghostline coaching: brake boards and a racing line that follow your speed, and a 3D ghost of the best lap.
+-- Ghostline coaching: a brake board per corner with a countdown timed from your speed, a racing line, and a 3D
+-- ghost of the best lap.
 -- Ghostline sends the best lap for the car and track you're driving into shared memory ("GhostlineRef.v1",
 -- layout `ghl_ref`, mirrored by backend/coach.py). Everything time-critical happens here, in the game's own frame
 -- loop: nothing waits on Ghostline, so the boards and the countdown are as current as the frame on screen.
@@ -26,7 +27,6 @@ typedef struct {
 local M = {}
 local REF_MAGIC, CHECK = 0x31524847, 0.5
 local SHOW = 1200          -- boards appear this far before the corner (m)
-local LOCK = 1.0           -- a board stops moving this long before you reach it (s)
 local CUES = { 0.6, 0.3, 0 }   -- countdown: two ticks, then "brake", seconds before the board
 local cfg = ac.storage({ boards = true, line = true, ghost = true, beep = true, lead = 0, ahead = 200, alpha = 0.35 },
   'ghostline.coach.')
@@ -38,7 +38,7 @@ local live, n, L, step = false, 0, 1, 2
 local Y, Yok                   -- per point: road height under the best lap's line (filled in lazily)
 local carId, track = ac.getCarID(0), ac.getTrackFullID('-')
 local car, clock, dNow, vNow, lapT, dtLast = nil, 0, 0, 0, 0, 1 / 60
-local boards = {}              -- per corner: { at = metres, locked = bool }
+local boards = {}              -- per corner in view: { at = metres, dist = metres ahead, stage = countdown }
 local cue = { k = -1, stage = 0, shown = 0 }
 local rays = 0                 -- raycasts this frame (the road height is filled in a few points per frame)
 local gi, ghostOn, gpos, glook, gup = 0, false, vec3(), vec3(0, 0, 1), vec3(0, 1, 0)
@@ -119,7 +119,7 @@ local function activate()
   spare, ref, pend = ref, pend, nil
   n, L, step = ref.n, math.max(ref.length, 1), math.max(ref.step, 0.5)
   live = n > 10 and str(ref.car) == carId and str(ref.track) == track
-  boards, cue.k, gi = {}, -1, 0
+  boards, boardSide, cue.k, gi = {}, {}, -1, 0
   if not live then disposeGhost() return end
   Y, Yok = ffi.new('float[?]', n), ffi.new('uint8_t[?]', n)
   loadGhost()
@@ -132,19 +132,6 @@ local function load()
   ffi.copy(copy, blk, ffi.sizeof('ghl_ref'))
   if blk.rev ~= r then return end   -- Ghostline wrote meanwhile: next time
   seen, spare, pend = r, nil, copy
-end
-
--- where to brake for corner k at the speed you're carrying: the best lap's braking, from your speed down to its
--- slowest point. Your speed at the board is predicted from the best lap's speed profile up to there.
-local function boardAt(k)
-  local vref = math.max(at(ref.speed, dNow) / 3.6, 5)
-  local ratio = math.min(math.max(ref.cSpeed[k] / 3.6 / vref, 0.7), 1.6)
-  local vp, vmin = vNow * ratio, ref.cMin[k] / 3.6
-  local zone = ahead(ref.cBrake[k], ref.cApex[k])
-  if vp <= vmin + 0.5 then return ref.cBrake[k] end
-  local back = (vp * vp - vmin * vmin) / (2 * ref.cDecel[k])
-  back = math.min(math.max(back, 5), zone + 150)
-  return wrap(ref.cApex[k] - back)
 end
 
 local function sound(file)
@@ -164,15 +151,9 @@ local function updateBoards()
     if toApex > SHOW and toApex < L - 300 then
       boards[k] = nil                               -- far away, or more than 300 m past the corner
     elseif toApex <= SHOW then
-      if not b then b = { at = ref.cBrake[k], locked = false }; boards[k] = b end
+      if not b then b = { at = ref.cBrake[k] }; boards[k] = b end   -- where the best lap braked; it doesn't move
       local dist = ahead(dNow, b.at)
       if dist > toApex then dist = dist - L end      -- the board is behind you (you're braking past it)
-      if not b.locked then
-        b.at = boardAt(k)
-        dist = ahead(dNow, b.at)
-        if dist > toApex then dist = dist - L end
-        if (vNow > 1 and dist / vNow < LOCK) or (car.brake > 0.2 and dist < 150) then b.locked = true end
-      end
       b.dist = dist
       local tt = dist / math.max(vNow, 1)
       b.stage = dist < -25 and -1 or tt <= 0 and 3 or tt <= CUES[2] and 2 or tt <= CUES[1] and 1 or 0
@@ -299,36 +280,45 @@ local function lineColour(x)
   return c
 end
 
+local lineDrawn = 0   -- metres of line drawn last frame (shown in the window)
+
 local function drawLine()
   local draw = math.min(math.floor(cfg.ahead / step), n - 1)
   local i0 = math.floor(wrap(dNow + 3) / step)
   render.setBlendMode(render.BlendMode.AlphaBlend)
   render.setDepthMode(render.DepthMode.ReadOnlyLessEqual)
   render.setCullMode(render.CullMode.None)
-  render.glBegin(render.GLPrimitiveType.Quads)
-  for j = 0, draw - 1 do
-    local a, b = (i0 + j) % n, (i0 + j + 1) % n
+  lineDrawn = 0
+  local j = 0
+  while j < draw do
+    local x = ahead(dNow, (i0 + j) * step)
+    local k = x < 40 and 1 or x < 120 and 2 or 4            -- longer pieces further away, where they're tiny anyway
+    k = math.min(k, draw - j)
+    local a, b = (i0 + j) % n, (i0 + j + k) % n
     local ya, yb = ground(a), ground(b)
     if not ya or not yb then break end
-    local x = ahead(dNow, a * step + step / 2)
-    local c = lineColour(x)
+    local c = lineColour(x + k * step / 2)
     -- seen from the cockpit, a flat strip far ahead shrinks to a sliver (and sinks into the road surface), so the line
     -- gets wider, slightly higher and more opaque with distance; faint right under the car, fading out at the end
-    local half, lift = math.min(0.35 + 0.006 * x, 2), 0.04 + 0.0025 * x
+    local xb = x + k * step
+    local ha, hb = math.min(0.35 + 0.006 * x, 2), math.min(0.35 + 0.006 * xb, 2)
     local alpha = math.min(1, x / 12) * (1 + 0.6 * math.min(1, x / 150)) * math.min(1, (1 - j / draw) * 10)
     col.r, col.g, col.b, col.mult = c.r, c.g, c.b, math.min(c.mult * alpha, 0.95)
-    local dx, dz = ref.x[b] - ref.x[a], ref.z[b] - ref.z[a]
-    local len = math.sqrt(dx * dx + dz * dz)
-    if len > 0.01 then
-      local px, pz = -dz / len * half, dx / len * half
-      render.glSetColor(col)
-      tmp1:set(ref.x[a] - px, ya + lift, ref.z[a] - pz); render.glVertex(tmp1)
-      tmp2:set(ref.x[a] + px, ya + lift, ref.z[a] + pz); render.glVertex(tmp2)
-      tmp3:set(ref.x[b] + px, yb + lift, ref.z[b] + pz); render.glVertex(tmp3)
-      tmp4:set(ref.x[b] - px, yb + lift, ref.z[b] - pz); render.glVertex(tmp4)
+    local dxa, dza = ref.x[(a + 1) % n] - ref.x[a], ref.z[(a + 1) % n] - ref.z[a]
+    local dxb, dzb = ref.x[(b + 1) % n] - ref.x[b], ref.z[(b + 1) % n] - ref.z[b]
+    local la, lb = math.sqrt(dxa * dxa + dza * dza), math.sqrt(dxb * dxb + dzb * dzb)
+    if la > 0.01 and lb > 0.01 then
+      local pxa, pza, pxb, pzb = -dza / la * ha, dxa / la * ha, -dzb / lb * hb, dxb / lb * hb
+      local lfa, lfb = 0.04 + 0.0025 * x, 0.04 + 0.0025 * xb
+      tmp1:set(ref.x[a] - pxa, ya + lfa, ref.z[a] - pza)
+      tmp2:set(ref.x[a] + pxa, ya + lfa, ref.z[a] + pza)
+      tmp3:set(ref.x[b] + pxb, yb + lfb, ref.z[b] + pzb)
+      tmp4:set(ref.x[b] - pxb, yb + lfb, ref.z[b] - pzb)
+      render.quad(tmp1, tmp2, tmp3, tmp4, col)
+      lineDrawn = xb
     end
+    j = j + k
   end
-  render.glEnd()
 end
 
 -- a point across the road `d` metres into the lap: centre and height of the road there, direction, half its width
@@ -346,36 +336,31 @@ local function roadAt(d)
   return c.x, y, c.z, dx / len, dz / len, math.min(math.max((sides.x + sides.y) / 2, 3), 15)
 end
 
-local postDir = vec3()
--- a pair of upright posts, one each side of the road: unlike marks on the road they don't flatten out with distance
-local function posts(d, h, colour)
-  local x, y, z, dx, dz, half = roadAt(d)
-  if not x then return end
-  postDir:set(-dx, 0, -dz)
-  for side = -1, 1, 2 do
-    tmp2:set(x - dz * (half + 0.6) * side, y + h / 2, z + dx * (half + 0.6) * side)
-    render.rectangle(tmp2, postDir, 0.55, h, colour)
-  end
-  return x, y, z, dx, dz, half
+local boardDir, boardSide = vec3(), {}
+-- which side of the road is the outside of corner k: the board stands there, like a real brake board
+local function outside(k, x, z, dx, dz)
+  if boardSide[k] then return boardSide[k] end
+  local i = math.floor(wrap(ref.cApex[k]) / step) % n
+  local turn = (ref.x[i] - x) * -dz + (ref.z[i] - z) * dx      -- > 0: the apex is towards (-dz, dx)
+  boardSide[k] = turn > 0 and -1 or 1
+  return boardSide[k]
 end
 
-local markCol = rgbm(1, 1, 1, 0.7)
--- a brake board: tall posts each side of the road and a stripe across it where to brake, shorter posts 100 m and
--- 50 m before it, and the gear and slowest speed of the corner above it
+-- the brake board: one sign on the outside of the corner at the best lap's brake point, coloured with the countdown,
+-- with the gear and slowest speed of the corner on top
 local function drawBoard(k, b)
   if b.stage < 0 then return end
-  for _, m in ipairs({ 100, 50 }) do
-    if b.dist and b.dist > m then posts(b.at - m, 0.9, markCol) end
-  end
-  local x, y, z, dx, dz, half = posts(b.at, 2.2, boardCols[b.stage])
+  local x, y, z, dx, dz, half = roadAt(b.at)
   if not x then return end
-  local sx, sz = -dz * half, dx * half
-  local lift = 0.05 + 0.0025 * math.max(b.dist or 0, 0)
-  tmp1:set(x - sx, y + lift, z - sz); tmp2:set(x + sx, y + lift, z + sz)
-  tmp3:set(x + sx + dx * 1.2, y + lift, z + sz + dz * 1.2); tmp4:set(x - sx + dx * 1.2, y + lift, z - sz + dz * 1.2)
-  render.quad(tmp1, tmp2, tmp3, tmp4, boardCols[b.stage])
+  local side = outside(k, x, z, dx, dz)
+  local ox, oz = -dz * (half + 1.2) * side, dx * (half + 1.2) * side
+  boardDir:set(-dx, 0, -dz)
+  tmp2:set(x + ox, y + 1.9, z + oz)
+  render.rectangle(tmp2, boardDir, 1.3, 1.9, boardCols[b.stage])           -- the sign
+  tmp3:set(x + ox, y + 0.5, z + oz)
+  render.rectangle(tmp3, boardDir, 0.12, 1.0, boardCols[0])               -- its post
   if b.dist and b.dist < 600 then
-    tmp1:set(x, y + 3, z)
+    tmp1:set(x + ox, y + 3.3, z + oz)
     local gear = ref.cGear[k] > 0 and tostring(ref.cGear[k]) or ''
     local text = ref.cKind[k] == 2 and ('LIFT ' .. gear) or (b.stage == 3 and 'BRAKE ' or '') .. gear .. '  ' .. math.floor(ref.cMin[k])
     render.debugText(tmp1, text, boardCols[b.stage], 1.6)
@@ -435,6 +420,7 @@ function M.window()
     if M.delta then ui.text(string.format('Delta: %+.2f s', M.delta)) end
     if ghostMsg then ui.text(ghostMsg) end
     if drawErr then ui.text('Drawing stopped: ' .. drawErr) end
+    if cfg.line then ui.text(string.format('Racing line: %.0f m ahead drawn', lineDrawn)) end
   end
   if ui.checkbox('Brake boards', cfg.boards) then cfg.boards = not cfg.boards end
   ui.sameLine()
@@ -457,6 +443,13 @@ function M.window()
     perf.sum, perf.max, perf.n = 0, 0, 0
   end
   if perf.text ~= '' then ui.text(perf.text) end
+end
+
+-- for the dash (hud.lua): the best lap being used, and its pedals where you are now
+function M.info()
+  if not live or not ref then return nil end
+  return { lapMs = ref.lapMs, driver = str(ref.driver), est = ref.est ~= 0, delta = M.delta,
+           brake = at(ref.brake, dNow), throttle = at(ref.throttle, dNow) }
 end
 
 M.state = function () return { live = live, boards = boards, cue = cue, ghostOn = ghostOn, gpos = gpos, glook = glook,

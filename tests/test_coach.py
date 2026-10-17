@@ -83,9 +83,8 @@ render = {
   setBlendMode = function () end, setDepthMode = function () end, setCullMode = function () end,
   on = function (name, fn) drawFn = fn end,
   glBegin = function () end, glEnd = function () end,
-  glSetColor = function (c) drawn.line[#drawn.line + 1] = c.g end,
   glVertex = function () end,
-  quad = function (a, b, c, d, col) drawn.quads[#drawn.quads + 1] = { (a.x + b.x) / 2, (a.z + b.z) / 2, col.g } end,
+  quad = function (a, b, c, d, col) drawn.line[#drawn.line + 1] = { (a.x + b.x) / 2, (a.z + b.z) / 2, col.g } end,
   debugText = function (p, s) drawn.text[#drawn.text + 1] = s end,
   rectangle = function (p, dir, w, h) drawn.posts = (drawn.posts or 0) + 1 end,
 }
@@ -118,7 +117,7 @@ def drive(factor, fps, until=None):
     m = lua.eval("require('coach')")
     T_end = (until or p["t"][-1]) / factor
     dt = 1.0 / fps
-    out = {"locks": {}, "snap": {}}
+    out = {"at": {}, "snap": {}}
     clock, T = 0.0, 0.0
     while T < T_end:
         tr = T * factor
@@ -134,12 +133,11 @@ def drive(factor, fps, until=None):
         g.drawFn()
         st = m.state()
         for k, b in st.boards.items():
-            if b.locked and k not in out["locks"]:
-                out["locks"][k] = float(b.at)
+            out["at"].setdefault(k, set()).add(round(float(b.at), 3))
         for key, at in (("ghost40", 40.0), ("line", None)):
             if key == "ghost40" and abs(T - at) < dt / 2:
                 out["snap"]["ghost"] = (list(g.ghost.pos.values()), float(m.gap), d, bool(g.ghost.visible))
-        out.setdefault("frames", []).append((T, d, list(g.drawn.line.values())))
+        out.setdefault("frames", []).append((T, d, [tuple(q.values()) for q in g.drawn.line.values()]))
         T += dt
     out["sounds"] = [(float(s.t), s.f.decode()) for s in g.sounds.values()]
     out["text"] = list(g.drawn.text.values())
@@ -174,28 +172,33 @@ assert abs(pos[1] - 0.45) < 0.05, "ghost at your car's height above the road"
 roggia = next(c for c in corners if c["name"] == "Roggia")
 T0 = t_at(roggia["brake"]) - 1.0
 T, d, cols = min(r["frames"], key=lambda f: abs(f[0] - T0))
-red = next(j for j, gch in enumerate(cols) if gch < 0.3)
-d_red = d + 3 + red * ref.step
-assert abs(d_red - roggia["brake"]) < 2.5, (d_red, roggia["brake"])
-assert any(0.7 < gch < 0.9 for gch in cols[:red]), "yellow before the board"
-assert cols[0] > 0.9, "green right in front of the car"
+ahead_ix = np.nonzero((p["d"] >= d) & (p["d"] < d + 600))[0]
+where = lambda q: float(p["d"][ahead_ix[np.argmin(np.hypot(p["x"][ahead_ix] - q[0], p["z"][ahead_ix] - q[1]))]])
+red = next(j for j, q in enumerate(cols) if q[2] < 0.3)
+d_red = where(cols[red])
+assert abs(d_red - roggia["brake"]) < 6, (d_red, roggia["brake"])
+assert any(0.7 < q[2] < 0.9 for q in cols[:red]), "yellow before the board"
+assert cols[0][2] > 0.9, "green right in front of the car"
+assert where(cols[-1]) - d > 180, f"the line reaches {where(cols[-1]) - d:.0f} m ahead"
 print(f"racing line turns red {d_red - roggia['brake']:+.1f} m from Roggia's brake point")
 
-# 10% faster: every board moves earlier, by what the best lap's braking needs to lose the extra speed
+# 10% faster: the boards stay where the best lap braked, and the countdown is timed from your speed
 r = drive(1.1, 60, until=p["t"][-1] * 0.6)
+brakes = [s for s in r["sounds"] if s[1].endswith("brake.wav")]
 checked = 0
 for k, c in enumerate(corners):
-    if c["kind"] != 1 or k not in r["locks"] or c["brake"] < 100:
+    if c["kind"] != 1 or k not in r["at"] or c["brake"] < 100:
         continue
-    vp, vmin = 1.1 * c["speed"] / 3.6, c["min"] / 3.6
-    want = c["apex"] - min(max((vp * vp - vmin * vmin) / (2 * c["decel"]), 5), c["apex"] - c["brake"] + 150)
-    got = r["locks"][k]
-    assert got < c["brake"] - 5 and abs(got - want) < 6, (c["name"], got, want, c["brake"])
+    assert r["at"][k] == {round(c["brake"], 3)}, (c["name"], r["at"][k], c["brake"])
+    tb = t_at(c["brake"]) / 1.1
+    if tb > p["t"][-1] * 0.6 / 1.1 - 1:
+        continue   # past the end of this shorter run
+    assert min(abs(s[0] - tb) for s in brakes) <= 0.5 / 60 + 0.002, c["name"]
     checked += 1
 assert checked >= 2, checked
 pos, gap, d, vis = r["snap"]["ghost"]
 assert gap < -50, f"10% faster: the ghost should be well behind ({gap:.0f} m)"
 assert any(t.decode().startswith("BRAKE") for t in r["text"])
-assert g.drawn.posts and g.drawn.posts > 1000, "upright posts at the boards"
-print(f"10% faster: {checked} boards moved earlier as expected, ghost {gap:.0f} m behind")
+assert g.drawn.posts and g.drawn.posts > 1000, "an upright board at each corner"
+print(f"10% faster: {checked} boards stayed put, countdown on time, ghost {gap:.0f} m behind")
 print("coach ok, window:", g.lastText.decode())

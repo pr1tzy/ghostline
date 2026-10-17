@@ -72,7 +72,7 @@ def app_status():
     d, ld = app_dir(), lua_dir()
     installed = bool(d and (d / "RaceLogger.py").exists())
     current = installed and _same(d / "RaceLogger.py", APP_SRC / "RaceLogger.py") and \
-        (ld is None or all(_same(ld / f.name, f) for f in LUA_SRC.iterdir()))
+        (ld is None or all(_same(ld / f.relative_to(LUA_SRC), f) for f in LUA_SRC.rglob("*") if f.is_file()))   # fonts/ too
     ini = documents() / "Assetto Corsa" / "cfg" / "python.ini"
     active = ini.exists() and re.search(r"\[RACELOGGER\]\s*ACTIVE\s*=\s*1", ini.read_text(errors="ignore"), re.I) is not None
     return {"ac_path": str(find_ac() or ""), "installed": installed, "current": bool(current), "active": active,
