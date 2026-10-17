@@ -310,49 +310,75 @@ local function drawLine()
     local a, b = (i0 + j) % n, (i0 + j + 1) % n
     local ya, yb = ground(a), ground(b)
     if not ya or not yb then break end
-    local c = lineColour(ahead(dNow, a * step + step / 2))
-    local fade = 1 - j / draw
-    col.r, col.g, col.b, col.mult = c.r, c.g, c.b, c.mult * math.min(1, fade * 3)
+    local x = ahead(dNow, a * step + step / 2)
+    local c = lineColour(x)
+    -- seen from the cockpit, a flat strip far ahead shrinks to a sliver (and sinks into the road surface), so the line
+    -- gets wider, slightly higher and more opaque with distance; faint right under the car, fading out at the end
+    local half, lift = math.min(0.35 + 0.006 * x, 2), 0.04 + 0.0025 * x
+    local alpha = math.min(1, x / 12) * (1 + 0.6 * math.min(1, x / 150)) * math.min(1, (1 - j / draw) * 10)
+    col.r, col.g, col.b, col.mult = c.r, c.g, c.b, math.min(c.mult * alpha, 0.95)
     local dx, dz = ref.x[b] - ref.x[a], ref.z[b] - ref.z[a]
     local len = math.sqrt(dx * dx + dz * dz)
     if len > 0.01 then
-      local px, pz = -dz / len * 0.35, dx / len * 0.35
+      local px, pz = -dz / len * half, dx / len * half
       render.glSetColor(col)
-      tmp1:set(ref.x[a] - px, ya + 0.04, ref.z[a] - pz); render.glVertex(tmp1)
-      tmp2:set(ref.x[a] + px, ya + 0.04, ref.z[a] + pz); render.glVertex(tmp2)
-      tmp3:set(ref.x[b] + px, yb + 0.04, ref.z[b] + pz); render.glVertex(tmp3)
-      tmp4:set(ref.x[b] - px, yb + 0.04, ref.z[b] - pz); render.glVertex(tmp4)
+      tmp1:set(ref.x[a] - px, ya + lift, ref.z[a] - pz); render.glVertex(tmp1)
+      tmp2:set(ref.x[a] + px, ya + lift, ref.z[a] + pz); render.glVertex(tmp2)
+      tmp3:set(ref.x[b] + px, yb + lift, ref.z[b] + pz); render.glVertex(tmp3)
+      tmp4:set(ref.x[b] - px, yb + lift, ref.z[b] - pz); render.glVertex(tmp4)
     end
   end
   render.glEnd()
 end
 
--- a brake board: a stripe across the road where to brake, with the gear and slowest speed of the corner above it
-local function drawBoard(k, b)
-  if b.stage < 0 then return end
-  local p = b.at / L
+-- a point across the road `d` metres into the lap: centre and height of the road there, direction, half its width
+local function roadAt(d)
+  local p = wrap(d) / L
   local c = ac.trackProgressToWorldCoordinate(p)
-  local c2 = ac.trackProgressToWorldCoordinate(wrap(b.at + 2) / L)
-  local sides = ac.getTrackAISplineSides(p)
+  local c2 = ac.trackProgressToWorldCoordinate(wrap(d + 2) / L)
   local dx, dz = c2.x - c.x, c2.z - c.z
   local len = math.sqrt(dx * dx + dz * dz)
-  if len < 0.01 then return end
-  dx, dz = dx / len, dz / len
-  local half = math.min(math.max((sides.x + sides.y) / 2, 3), 15)
-  local sx, sz = -dz * half, dx * half
+  if len < 0.01 then return nil end
+  local sides = ac.getTrackAISplineSides(p)
   tmp1:set(c.x, c.y + 4, c.z)
   local hit = physics.raycastTrack(tmp1, down, 12)
-  local y = ((hit and hit >= 0) and c.y + 4 - hit or c.y) + 0.05
-  tmp1:set(c.x - sx, y, c.z - sz); tmp2:set(c.x + sx, y, c.z + sz)
-  tmp3:set(c.x + sx + dx * 0.8, y, c.z + sz + dz * 0.8); tmp4:set(c.x - sx + dx * 0.8, y, c.z - sz + dz * 0.8)
+  local y = (hit and hit >= 0) and c.y + 4 - hit or c.y
+  return c.x, y, c.z, dx / len, dz / len, math.min(math.max((sides.x + sides.y) / 2, 3), 15)
+end
+
+local postDir = vec3()
+-- a pair of upright posts, one each side of the road: unlike marks on the road they don't flatten out with distance
+local function posts(d, h, colour)
+  local x, y, z, dx, dz, half = roadAt(d)
+  if not x then return end
+  postDir:set(-dx, 0, -dz)
+  for side = -1, 1, 2 do
+    tmp2:set(x - dz * (half + 0.6) * side, y + h / 2, z + dx * (half + 0.6) * side)
+    render.rectangle(tmp2, postDir, 0.55, h, colour)
+  end
+  return x, y, z, dx, dz, half
+end
+
+local markCol = rgbm(1, 1, 1, 0.7)
+-- a brake board: tall posts each side of the road and a stripe across it where to brake, shorter posts 100 m and
+-- 50 m before it, and the gear and slowest speed of the corner above it
+local function drawBoard(k, b)
+  if b.stage < 0 then return end
+  for _, m in ipairs({ 100, 50 }) do
+    if b.dist and b.dist > m then posts(b.at - m, 0.9, markCol) end
+  end
+  local x, y, z, dx, dz, half = posts(b.at, 2.2, boardCols[b.stage])
+  if not x then return end
+  local sx, sz = -dz * half, dx * half
+  local lift = 0.05 + 0.0025 * math.max(b.dist or 0, 0)
+  tmp1:set(x - sx, y + lift, z - sz); tmp2:set(x + sx, y + lift, z + sz)
+  tmp3:set(x + sx + dx * 1.2, y + lift, z + sz + dz * 1.2); tmp4:set(x - sx + dx * 1.2, y + lift, z - sz + dz * 1.2)
   render.quad(tmp1, tmp2, tmp3, tmp4, boardCols[b.stage])
-  local i = math.floor(wrap(b.at) / step) % n
-  local yl = ground(i)
-  if yl and b.dist and b.dist < 400 then
-    tmp1:set(ref.x[i], yl + 1.6, ref.z[i])
+  if b.dist and b.dist < 600 then
+    tmp1:set(x, y + 3, z)
     local gear = ref.cGear[k] > 0 and tostring(ref.cGear[k]) or ''
     local text = ref.cKind[k] == 2 and ('LIFT ' .. gear) or (b.stage == 3 and 'BRAKE ' or '') .. gear .. '  ' .. math.floor(ref.cMin[k])
-    render.debugText(tmp1, text, boardCols[b.stage], 1.4)
+    render.debugText(tmp1, text, boardCols[b.stage], 1.6)
   end
 end
 

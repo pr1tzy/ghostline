@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.1
+
+- **Racing line readable further ahead.** From the cockpit a flat line far ahead shrank to a sliver, so it seemed to
+  stop under the car. It now gets wider, slightly higher and more opaque with distance.
+- **Upright brake boards.** Tall posts each side of the road at the brake point (coloured with the countdown), and
+  shorter posts 100 m and 50 m before it, like a real track's distance boards.
+
 ## 2.2.0
 
 Coaching on the track, inside the game (needs Custom Shaders Patch), from the best lap for your car.

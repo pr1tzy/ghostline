@@ -87,6 +87,7 @@ render = {
   glVertex = function () end,
   quad = function (a, b, c, d, col) drawn.quads[#drawn.quads + 1] = { (a.x + b.x) / 2, (a.z + b.z) / 2, col.g } end,
   debugText = function (p, s) drawn.text[#drawn.text + 1] = s end,
+  rectangle = function (p, dir, w, h) drawn.posts = (drawn.posts or 0) + 1 end,
 }
 ui = { text = function (s) lastText = s end, separator = function () end, sameLine = function () end,
        checkbox = function () return false end, slider = function (l, v) return v, false end }
@@ -195,5 +196,6 @@ assert checked >= 2, checked
 pos, gap, d, vis = r["snap"]["ghost"]
 assert gap < -50, f"10% faster: the ghost should be well behind ({gap:.0f} m)"
 assert any(t.decode().startswith("BRAKE") for t in r["text"])
+assert g.drawn.posts and g.drawn.posts > 1000, "upright posts at the boards"
 print(f"10% faster: {checked} boards moved earlier as expected, ghost {gap:.0f} m behind")
 print("coach ok, window:", g.lastText.decode())
