@@ -8,7 +8,7 @@ local coach = nil
 function H.setCoach(c) coach = c end
 
 local cfg = ac.storage({ scale = 1, opacity = 0.92, deltaRef = 'ghost', board = false, standings = true, timing = true,
-  drive = true, pedals = true, tyres = true }, 'ghostline.hud.')
+  drive = true, pedals = true, tyres = true, map = true }, 'ghostline.hud.')
 H.cfg = cfg
 
 local function hex(r, g, b, a) return rgbm(r / 255, g / 255, b / 255, a or 1) end
@@ -18,6 +18,20 @@ local C = {
   acc = hex(157, 107, 255), ghost = hex(62, 240, 255), gain = hex(66, 245, 200), loss = hex(255, 79, 129),
 }
 H.colors = C
+
+-- race flags the game reports (CSP: yellow, blue, black, penalty and chequered work), in their real colours
+local FLAGS = {}
+if ac.FlagType then
+  FLAGS[ac.FlagType.Caution] = { 'YELLOW FLAG', hex(255, 214, 10) }
+  FLAGS[ac.FlagType.FasterCar] = { 'BLUE FLAG', hex(40, 120, 255) }
+  FLAGS[ac.FlagType.Stop] = { 'BLACK FLAG', hex(239, 236, 244) }
+  FLAGS[ac.FlagType.ReturnToPits] = { 'PENALTY', hex(255, 79, 129) }
+  FLAGS[ac.FlagType.Finished] = { 'CHEQUERED FLAG', hex(239, 236, 244) }
+end
+local function flagNow()
+  local sim = ac.getSim()
+  return sim and sim.raceFlagType and FLAGS[sim.raceFlagType] or nil
+end
 local panelBg = rgbm(C.bg.r, C.bg.g, C.bg.b, 1)
 
 local dir = (__dirname or '.') .. '/fonts/'
@@ -197,6 +211,7 @@ local function gearBody()
     (car.tractionControlMode or 0) > 0, car.tractionControlInAction, C.ghost)
   if car.brakeBias and car.brakeBias > 0.05 then tag(string.format('BB %.1f', car.brakeBias * 100), true, false, C.fg) end
   if car.drsAvailable or car.drsActive then tag('DRS', true, car.drsActive, C.gain) end
+  if car.manualPitsSpeedLimiterEnabled or car.speedLimiterInAction then tag('LIMITER', true, true, C.gain) end
 end
 
 -- ---------- Delta: gap to the best lap (or session best) right now ----------
@@ -230,7 +245,9 @@ local function timingBody()
   if not car then return end
   local sim = ac.getSim()
   local W, Hh = 290, 164
-  text(F.text, 'LAP ' .. (car.lapCount + 1), 10, 14, 12, C.mute)
+  local flag = flagNow()
+  if flag and flash(2) then text(F.text, flag[1], 10, 14, 12, flag[2])
+  else text(F.text, 'LAP ' .. (car.lapCount + 1), 10, 14, 12, flag and flag[2] or C.mute) end
   local n = sim.carsCount
   if n > 1 and car.racePosition and car.racePosition > 0 then
     local tot = '/' .. n
@@ -283,7 +300,10 @@ local function timingBody()
   if car.fuelPerLap and car.fuelPerLap > 0.01 then fl = fl .. string.format('   %.1f LAPS', fuel / car.fuelPerLap) end
   text(F.num, fl, 10, 14, 143, C.fg)
   local left = sim.sessionTimeLeft and sim.sessionTimeLeft / 1000 or 0
-  if left > 0 and not cfg.standings then text(F.num, clock(left), 10, W - 14, 143, C.mute, 1) end   -- else it's in Standings
+  -- in a race: fuel left over at the flag (laps to go x fuel per lap), else the session clock if Standings is off
+  local spare = H.fuelSpare(car, sim)
+  if spare then text(F.num, string.format('%+.1f L AT FLAG', spare), 10, W - 14, 143, spare >= 0 and C.gain or C.loss, 1)
+  elseif left > 0 and not cfg.standings then text(F.num, clock(left), 10, W - 14, 143, C.mute, 1) end
 end
 
 -- ---------- Pedals: clutch / brake / throttle with the ghost's pedals where you are, trace, steering ----------
@@ -349,8 +369,14 @@ local function tyresBody()
   if not car or not car.wheels then return end
   local sim = ac.getSim()
   local W, Hh = 236, 184
-  text(F.text, 'TYRES  C / PSI', 10, 14, 12, C.mute)
-  if sim.ambientTemperature then
+  local compound = ''
+  pcall(function () compound = ac.getTyresName(0, car.compoundIndex or 0) or '' end)
+  clipText(F.text, compound ~= '' and compound:upper() or 'TYRES', 10, 14, 12, 110, C.mute)
+  local dmg = 0
+  if car.damage then for z = 0, 3 do dmg = math.max(dmg, car.damage[z] or 0) end end
+  if dmg >= 5 then
+    text(F.num, string.format('DAMAGE %d', math.floor(dmg + 0.5)), 10, W - 14, 12, C.loss, 1)   -- hardest hit, km/h
+  elseif sim.ambientTemperature then
     text(F.num, string.format('AIR %d  TRACK %d', math.floor(sim.ambientTemperature + 0.5), math.floor((sim.roadTemperature or 0) + 0.5)), 10, W - 14, 12, C.mute, 1)
   end
   local spots = { [0] = { 14, 32, false }, { W - 14 - 30, 32, true }, { 14, 108, false }, { W - 14 - 30, 108, true } }
@@ -468,6 +494,51 @@ local function standingsBody()
 end
 
 -- ---------- the dash: sections side by side ----------
+-- ---------- Map: the track with every car on it ----------
+local trackPts, trackBox = nil, nil
+local function buildTrack()
+  local pts, x0, x1, z0, z1 = {}, 1e9, -1e9, 1e9, -1e9
+  for i = 0, 199 do
+    local p = ac.trackProgressToWorldCoordinate(i / 200)
+    pts[#pts + 1] = { p.x, p.z }
+    x0, x1, z0, z1 = math.min(x0, p.x), math.max(x1, p.x), math.min(z0, p.z), math.max(z1, p.z)
+  end
+  if x1 - x0 < 1 then return end
+  trackPts, trackBox = pts, { x0, x1, z0, z1 }
+end
+
+local MAP_W = 200
+local function mapBody()
+  local W = MAP_W
+  if not trackPts then buildTrack() end
+  text(F.text, 'MAP', 10, 14, 12, C.mute)
+  if not trackPts then return end
+  local x0, x1, z0, z1 = trackBox[1], trackBox[2], trackBox[3], trackBox[4]
+  local box, top = W - 28, 32
+  local k = math.min(box / (x1 - x0), (DASH_H - top - 14) / (z1 - z0))
+  local cx, cz = 14 + box / 2, top + (DASH_H - top - 14) / 2
+  local mx, mz = (x0 + x1) / 2, (z0 + z1) / 2
+  -- the same way round as the game's own track map (content/tracks/<track>/map.png): x to the right, z down
+  local function at(x, z) return v(cx + (x - mx) * k, cz + (z - mz) * k) end
+  ui.pathClear()
+  for i = 1, #trackPts do ui.pathLineTo(at(trackPts[i][1], trackPts[i][2])) end
+  ui.pathStroke(C.line2, true, 3 * math.max(1, S))   -- one closed path: clean joins
+  local s0 = at(trackPts[1][1], trackPts[1][2])
+  ui.drawCircleFilled(s0, 3 * S, C.fg, 8)            -- start / finish
+  local sim = ac.getSim()
+  for i = math.min(sim.carsCount, 64) - 1, 0, -1 do   -- you last, so you're drawn on top
+    local c = ac.getCar(i)
+    if c and c.isConnected ~= false then
+      local col = i == 0 and C.acc or c.isInPitlane and C.mute or C.fg
+      ui.drawCircleFilled(at(c.position.x, c.position.z), (i == 0 and 4.5 or 3) * S, col, 12)
+    end
+  end
+  if coach and coach.ghostAt then
+    local gx, gz = coach.ghostAt()
+    if gx then ui.drawCircleFilled(at(gx, gz), 3.5 * S, C.ghost, 12) end
+  end
+end
+
 local SECTIONS = {
   { key = 'standings', w = 344, draw = function () standingsBody() end },
   { key = 'timing', w = 290, draw = function () timingBody() end },
@@ -481,6 +552,7 @@ local SECTIONS = {
     end },
   { key = 'pedals', w = 220, draw = function () pedalsBody() end },
   { key = 'tyres', w = 236, draw = function () tyresBody() end },
+  { key = 'map', w = MAP_W, draw = function () mapBody() end },
 }
 
 function H.dash()
@@ -496,6 +568,8 @@ function H.dash()
   ui.dummy(vec2(total * S, DASH_H * S))   -- sizes the window (AUTO_RESIZE)
   ox, oy = x0, y0
   slab(total, DASH_H)
+  local flag = flagNow()
+  if flag then rect(12, 0, total - 12, 3, flag[2]) end
   local x = 0
   for _, sec in ipairs(SECTIONS) do
     if cfg[sec.key] then
@@ -513,7 +587,7 @@ function H.settings()
   ui.separator()
   ui.text('Dash: show it from the CSP app bar (Ghostline Dash). Sections:')
   for k, sec in ipairs(SECTIONS) do
-    local label = ({ standings = 'Standings', timing = 'Timing', drive = 'Gear + delta', pedals = 'Pedals', tyres = 'Tyres' })[sec.key]
+    local label = ({ standings = 'Standings', timing = 'Timing', drive = 'Gear + delta', pedals = 'Pedals', tyres = 'Tyres', map = 'Map' })[sec.key]
     if ui.checkbox(label, cfg[sec.key]) then cfg[sec.key] = not cfg[sec.key] end
     if k < #SECTIONS then ui.sameLine() end
   end
@@ -522,7 +596,38 @@ function H.settings()
   local v2, c2 = ui.slider('##hudalpha', cfg.opacity, 0.3, 1, 'Dash background: %.2f', true)
   if c2 then cfg.opacity = v2 end
   ui.text('Click Delta to switch best lap / session best, Standings to switch relative / full order.')
+  ui.text(H.fontsLoaded() and 'Dash fonts: loaded (Grotesk, Sligoil, Lack).' or 'Dash fonts: not loaded, using the Windows font.')
 end
 
 H.sections = SECTIONS
+
+-- did CSP load the dash's own fonts? Sligoil (monospaced) measures differently from the default font if so
+local fontsOk = nil
+function H.fontsLoaded()
+  if fontsOk == nil then
+    local probe = 'iiii0000WWWW'
+    local base = ui.measureDWriteText(probe, 20).x
+    ui.pushDWriteFont(F.num)
+    local ours = ui.measureDWriteText(probe, 20).x
+    ui.popDWriteFont()
+    fontsOk = math.abs(ours - base) > 1
+  end
+  return fontsOk
+end
+
+-- in a race with a known length: fuel left at the flag (laps to go x fuel per lap), nil otherwise
+function H.fuelSpare(car, sim)
+  if sim.raceSessionType ~= (ac.SessionType and ac.SessionType.Race or 3) or not car.fuelPerLap or car.fuelPerLap < 0.01 then
+    return nil
+  end
+  local session = ac.getSession and ac.getSession(sim.currentSessionIndex or 0)
+  local togo
+  if session and session.laps and session.laps > 0 and not session.isTimedRace then
+    togo = session.laps - car.lapCount - car.splinePosition
+  elseif sim.sessionTimeLeft and sim.sessionTimeLeft > 0 and car.bestLapTimeMs > 0 then
+    togo = sim.sessionTimeLeft / car.bestLapTimeMs + 1 - car.splinePosition   -- timed race: the lap after the clock runs out too
+  end
+  if not togo or togo <= 0 then return nil end
+  return (car.fuel or 0) - togo * car.fuelPerLap
+end
 return H

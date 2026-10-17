@@ -28,8 +28,24 @@ def measure(font, s, size):
     return _fonts[key].getlength(s.decode() if isinstance(s, bytes) else s)
 
 
+import numpy as np  # noqa: E402
+
+_rows = [l for l in (ROOT / "samples" / "monza_you.csv").read_text().splitlines() if l and not l.startswith("#")]
+_cols = _rows[0].split(",")
+_a = np.array([[float(v) for v in l.split(",")] for l in _rows[1:]])
+_pos, _x, _z = (_a[:, _cols.index(k)] for k in ("pos", "x", "z"))
+_order = np.argsort(_pos)
+TRACK = (_pos[_order], _x[_order], _z[_order])
+
+
+def track_at(p):
+    """World x, z of the sample lap at lap progress p (stands in for ac.trackProgressToWorldCoordinate)."""
+    return float(np.interp(p % 1, TRACK[0], TRACK[1])), float(np.interp(p % 1, TRACK[0], TRACK[2]))
+
+
 lua = LuaRuntime(unpack_returned_tuples=True, encoding=None)
 lua.globals().pyMeasure = measure
+lua.globals().pyTrack = track_at
 lua.execute(r"""
 package.path = '%s/?.lua;' .. package.path
 __dirname = '%s'
@@ -54,6 +70,7 @@ ui = {
   drawRectFilled = function (a, b, c) rec({ 'rect', a.x, a.y, b.x, b.y, col(c) }) end,
   drawQuadFilled = function (a, b, c, d, cl) rec({ 'poly', { { a.x, a.y }, { b.x, b.y }, { c.x, c.y }, { d.x, d.y } }, col(cl) }) end,
   drawLine = function (a, b, c, w) rec({ 'line', a.x, a.y, b.x, b.y, col(c), w }) end,
+  drawCircleFilled = function (p, r, c) rec({ 'circle', p.x, p.y, r, col(c) }) end,
   pushDWriteFont = function (f) font = f end,
   popDWriteFont = function () end,
   measureDWriteText = function (s, size) return vec2(pyMeasure(font, s, size), size) end,
@@ -70,6 +87,10 @@ ac = {
   getSim = function () return sim end,
   getCar = function (i) return cars[i] end,
   getDriverName = function (i) return names[i] end,
+  FlagType = { None = 0, Caution = 2, Stop = 5, ReturnToPits = 8, FasterCar = 12, Finished = 13 },
+  getTyresName = function () return 'Semislicks' end,
+  getSession = function () return session end,
+  trackProgressToWorldCoordinate = function (p) local x, z = pyTrack(p) return { x = x, y = 0, z = z } end,
 }
 local function wheel(core, opt)
   return { tyreCoreTemperature = core, tyreInsideTemperature = core + 6, tyreMiddleTemperature = core + 2,
@@ -87,9 +108,11 @@ function makeCar(i, spline, laps)
     lapTimeMs = 63412, previousLapTimeMs = 110204 + i * 400, bestLapTimeMs = 109876 + i * 300, isLapValid = true,
     performanceMeter = -0.214, estimatedLapTimeMs = 109662, fuel = 23.4, fuelPerLap = 3.8,
     currentSplits = splits({ 31012, 32511 }), bestSplits = splits({ 31204, 32300, 46100 }), currentSector = 2,
-    wheels = { [0] = wheel(84, 85), wheel(88, 85), wheel(72, 85), wheel(97, 85) } }
+    wheels = { [0] = wheel(84, 85), wheel(88, 85), wheel(72, 85), wheel(97, 85) },
+    position = { x = 0, y = 0, z = 0 }, damage = { [0] = 0, 0, 0, 0, 0 } }
 end
-sim = { carsCount = 8, sessionTimeLeft = 1394000, raceSessionType = 1, ambientTemperature = 24, roadTemperature = 31 }
+session = { laps = 20, isTimedRace = false }
+sim = { carsCount = 8, raceFlagType = 0, sessionTimeLeft = 1394000, raceSessionType = 1, ambientTemperature = 24, roadTemperature = 31 }
 cars, names = {}, {}
 local drivers = { 'pr1tzy', 'Max Lindqvist', 'Joao Pereira-Santos', 'A. Kowalczyk', 'Haruto Sato', 'Lena Fischer', 'Tom Okafor', 'Ines Duarte' }
 for i = 0, 7 do cars[i] = makeCar(i, 0.5, 4) names[i] = drivers[i + 1] end
@@ -122,6 +145,7 @@ for step in range(60 * 130):   # a bit over a lap
         d = start[i] * L + speeds[i] * t
         c = g.cars[i]
         c.splinePosition, c.lapCount = (d / L) % 1, int(d // L)
+        c.position.x, c.position.z = track_at(c.splinePosition)
     g.hud.update(dt)
 rel = run()
 row_text = texts(rel)
@@ -147,11 +171,37 @@ print(f"relative gaps match distance / speed ({checked} cars)")
 
 # ---- every section, in normal and awkward states ----
 calls = run()
-assert calls[0][0] == b"size" and abs(calls[0][1] - (344 + 290 + 300 + 220 + 236)) < 1, calls[0]
+assert calls[0][0] == b"size" and abs(calls[0][1] - (344 + 290 + 300 + 220 + 236 + 200)) < 1, calls[0]
 t_all = texts(calls)
-for want in ("5", "247", "ABS 3", "TC 2", "31.012", "S3", "GHOST", "TYRES  C / PSI", "RELATIVE"):
+for want in ("5", "247", "ABS 3", "TC 2", "31.012", "S3", "GHOST", "SEMISLICKS", "RELATIVE", "MAP"):
     assert want in t_all, want
 assert any(s.startswith("VS BEST LAP") for s in t_all)
+# the map: the track outline the same way round as the game's own map.png (x right, z down; checked by drawing
+# the sample lap over content/tracks/monza/map.png with its map.ini offsets), and a dot per car
+map_x0 = 344 + 290 + 300 + 220 + 236
+paths = [[list(q.values()) for q in c[1].values()] for c in calls if c[0] == b"polyline"]
+outline = next(pts for pts in paths if len(pts) >= 150 and pts[0][0] >= map_x0)
+world = [track_at(i / 200) for i in range(len(outline))]
+sx, sy = np.array([q[0] for q in outline]), np.array([q[1] for q in outline])
+wx, wz = np.array([w[0] for w in world]), np.array([w[1] for w in world])
+assert np.corrcoef(sx, wx)[0, 1] > 0.99 and np.corrcoef(sy, wz)[0, 1] > 0.99, "the map is mirrored or rotated"
+dots = [c for c in calls if c[0] == b"circle" and c[1] >= map_x0]
+assert len(dots) == 8 + 1, len(dots)   # cars and the start / finish (this fake has no ghost)
+# in a race: fuel left at the flag (20 laps; laps to go x fuel per lap)
+lua.execute("sim.raceSessionType = 3")
+fuel_t = [t for t in texts(run()) if "AT FLAG" in t]
+lua.execute("sim.raceSessionType = 1")
+c0 = g.cars[0]
+want = c0.fuel - (20 - c0.lapCount - c0.splinePosition) * c0.fuelPerLap
+assert fuel_t and abs(float(fuel_t[0].split()[0]) - want) < 0.06, (fuel_t, want)
+# a blue flag shows in Timing and as a bar along the top; pit limiter and damage show up
+lua.execute("sim.raceFlagType = 12; cars[0].manualPitsSpeedLimiterEnabled = true; cars[0].damage[1] = 37")
+calls = run()
+t_all = texts(calls)
+assert ("BLUE FLAG" in t_all or "LAP %d" % (c0.lapCount + 1) in t_all) and "LIMITER" in t_all and "DAMAGE 37" in t_all, t_all
+assert any(c[0] == b"rect" and c[2] == 0 and abs(c[5][2] - 1) < 0.01 and c[5][1] < 0.5 for c in
+           ([x[0], x[1], x[2], x[3], x[4], list(x[5].values())] for x in calls if x[0] == b"rect")), "blue bar on top"
+lua.execute("sim.raceFlagType = 0; cars[0].manualPitsSpeedLimiterEnabled = false; cars[0].damage[1] = 0")
 lua.execute("""
 ghostInfo = nil
 local c = cars[0]
@@ -174,11 +224,11 @@ assert g.hud.cfg.deltaRef == b"session" or g.hud.cfg.deltaRef == "session", g.hu
 lua.execute("hud.cfg.deltaRef = 'ghost'")
 # sections switch off: the dash shrinks to what's left, and says so when nothing is
 lua.execute("hud.cfg.standings, hud.cfg.timing, hud.cfg.pedals = false, false, false")
-assert abs(run()[0][1] - (300 + 236)) < 1
-lua.execute("hud.cfg.drive, hud.cfg.tyres = false, false")
+assert abs(run()[0][1] - (300 + 236 + 200)) < 1
+lua.execute("hud.cfg.drive, hud.cfg.tyres, hud.cfg.map = false, false, false")
 run()
 assert b"switched off" in g.lastText
-lua.execute("for _, k in ipairs({ 'standings', 'timing', 'drive', 'pedals', 'tyres' }) do hud.cfg[k] = true end")
+lua.execute("for _, k in ipairs({ 'standings', 'timing', 'drive', 'pedals', 'tyres', 'map' }) do hud.cfg[k] = true end")
 print("dash draws in normal and awkward states; clicks and section switches work")
 
 # ---- optional: render each panel to a PNG to review the design ----
@@ -188,7 +238,11 @@ if "--png" in sys.argv:
     out.mkdir(parents=True, exist_ok=True)
     lua.execute("""
     ghostInfo = { lapMs = 109876, driver = 'Max Lindqvist', est = true, delta = -0.214, brake = 0.35, throttle = 0.0 }
-    for i = 0, 7 do cars[i] = makeCar(i, cars[i].splinePosition, cars[i].lapCount) end
+    for i = 0, 7 do
+      cars[i] = makeCar(i, cars[i].splinePosition, cars[i].lapCount)
+      local x, z = pyTrack(cars[i].splinePosition)
+      cars[i].position = { x = x, y = 0, z = z }
+    end
     cars[0].brake, cars[0].gas = 0.62, 0.0
     cars[3].isInPitlane = true
     sim.sessionTimeLeft, sim.raceSessionType = 1394000, 1
@@ -215,6 +269,9 @@ if "--png" in sys.argv:
                 dr.rectangle([c[1] + o, c[2] + o, c[3] + o - 1, c[4] + o - 1], fill=rgba(list(c[5].values())))
             elif kind == "line":
                 dr.line([c[1] + o, c[2] + o, c[3] + o, c[4] + o], fill=rgba(list(c[5].values())), width=max(1, int(round(c[6]))))
+            elif kind == "circle":
+                cx, cy, r = c[1] + o, c[2] + o, c[3]
+                dr.ellipse([cx - r, cy - r, cx + r, cy + r], fill=rgba(list(c[4].values())))
             elif kind == "text":
                 s, size, x, y, col, fpath = c[1].decode(), c[2], c[3], c[4], list(c[5].values()), c[6].decode()
                 key = (fpath, int(size))

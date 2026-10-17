@@ -95,14 +95,18 @@ on Ghostline. The settings are in the app's window (CSP keeps them in
   60 fps, 4 ms at 120; `tests/test_coach.py` checks this by driving recorded laps frame by frame). A single
   "brake now" beep would always be late by your reaction time (about 0.2 s, 14 m at 250 km/h); a countdown lets you
   brake on the beat instead. **Sound early by** shifts the sounds if your audio has a delay or you want a lead.
-- **Racing line**: chevrons along the best lap's line for the next 50-400 m, like the F1 games' line. Red from the
-  board to the slowest point, yellow for the countdown before a board, through lifts and until the best lap was back
-  on full throttle, green otherwise. **Corners only** draws just the stretch from 120 m before each board to the
+- **Racing line**: chevrons along the best lap's line for the next 50-400 m, like the F1 games' line, and like
+  theirs it follows your speed. Red starts where you'd have to brake at the speed you're carrying (the best lap's
+  braking, from your speed down to its slowest speed): earlier than the board when you're faster, later when you're
+  slower. Yellow for the second before that, through lifts and until the best lap was back on full throttle, green
+  otherwise. **Corners only** draws just the stretch from 120 m before each board to the
   exit. The chevrons grow with distance so the far ones stay readable from the cockpit. The 3D world is drawn in HDR,
   so every colour goes through CSP's white point; without that, the line came out nearly black on a daylit track.
   The window shows how many chevrons are drawn, how far ahead, and how often the road surface wasn't found.
 - **3D ghost**: your car's shape (CSP's simple car mesh), see-through cyan with brighter edges, where the best lap
-  was at your current lap time, with your gap above it. It fades out when it's on top of your car so it never fogs
+  was at your current lap time, with your gap above it. Or the ghost of your own fastest valid lap this session
+  (recorded in the game, from your second lap on), which is closer to your pace while you're learning a track. It
+  shows up to 1 km away; the Ghostline window says where it is (or why it's hidden). It fades out when it's on top of your car so it never fogs
   up the cockpit. If CSP can't give the car shape it shows as a footprint on the road.
 - **Laps without pedal data** (other drivers): their brake points are worked out from how hard the car slowed down.
   Checked against 240 corners of laps with real pedal data, that lands 2 m early on average (corrected) and within
@@ -128,8 +132,15 @@ section on or off (the dash shrinks to what's left) and set its size and backgro
   switch), where it was a second ago and the predicted lap.
 - **Pedals**: clutch, brake and throttle with the best lap's brake and throttle at the same spot on track (cyan),
   ABS / TC flashes, the last 4 seconds of throttle and brake, steering angle.
-- **Tyres**: inside / middle / outside temperature against the tyre's own optimum (cold cyan, in the window teal,
-  warm white, hot pink), core temperature, pressure, wear left, brake disc temperature.
+- **Tyres**: compound, inside / middle / outside temperature against the tyre's own optimum (cold cyan, in the
+  window teal, warm white, hot pink), core temperature, pressure, wear left, brake disc temperature, and damage (the
+  hardest hit, in km/h) when there is any.
+- **Map**: the track the same way round as the game's own map, every car on it (you in violet, the pits in grey)
+  and the ghost in cyan.
+- **Flags** (yellow, blue, black, penalty, chequered: the ones the game reports) show as a bar along the top of the
+  dash in the flag's colour and in Timing. **Pit limiter** lights up next to ABS / TC. In a race Timing also shows
+  the fuel you'll have left at the flag (laps to go times fuel per lap).
+- The Ghostline window says whether the dash's fonts loaded.
 
 ## Run from source
 

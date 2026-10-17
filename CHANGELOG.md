@@ -14,7 +14,12 @@ A full dash inside the game, so Ghostline is the only app you need.
   comes from your speed.
 - **Racing line like the F1 games'**: chevrons along the best lap's line, green / yellow / red, full or corners
   only. It was invisible before: the 3D world is HDR, and the colours now go through CSP's white point.
-- **3D ghost is your car's shape** in see-through cyan (CSP's car mesh), fading out when it's on top of you.
+- **The racing line follows your speed** like the F1 line: red starts where you'd have to brake at your speed, so
+  it moves earlier when you're faster. The board stays where the best lap braked.
+- **3D ghost is your car's shape** in see-through cyan (CSP's car mesh), fading out when it's on top of you. New:
+  a ghost of your own session best, it shows up to 1 km away, and the window says where it is.
+- **More on the dash**: a track map with every car and the ghost, race flags (bar along the top), pit limiter, tyre
+  compound, damage, and fuel left at the flag in races.
 - **Compare no longer fails** on laps where a chicane's two halves were merged into one corner, and the ideal-lap
   compare says "no laps of yours yet" instead of failing for cars you haven't driven.
 

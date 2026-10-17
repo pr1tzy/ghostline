@@ -28,8 +28,8 @@ local M = {}
 local REF_MAGIC, CHECK = 0x31524847, 0.5
 local SHOW = 1200          -- boards appear this far before the corner (m)
 local CUES = { 0.6, 0.3, 0 }   -- countdown: two ticks, then "brake", seconds before the board
-local cfg = ac.storage({ boards = true, line = true, cornersOnly = false, ghost = true, beep = true, lead = 0, ahead = 250,
-  alpha = 0.35 },
+local cfg = ac.storage({ boards = true, line = true, cornersOnly = false, ghost = true, ghostMine = false, beep = true,
+  lead = 0, ahead = 250, alpha = 0.35 },
   'ghostline.coach.')
 
 local raw, blk                 -- the shared block (keep `raw`: the mapping closes when it's garbage collected)
@@ -137,7 +137,21 @@ local function updateBoards()
     end
     if boards[k] then                                -- for the racing line: apex and full throttle, metres ahead
       local a = toApex > L - 300 and toApex - L or toApex
-      boards[k].apexD, boards[k].thrD = a, a + ahead(ref.cApex[k], ref.cThrottle[k])
+      b = boards[k]
+      b.apexD, b.thrD = a, a + ahead(ref.cApex[k], ref.cThrottle[k])
+      -- where you'd have to start braking at the speed you're carrying: the best lap's braking, from your speed
+      -- (predicted at its brake point from its speed profile) down to its slowest speed. The board stays where
+      -- the best lap braked; the racing line turns red from here, so it moves with your speed.
+      b.dynD = nil
+      if ref.cKind[k] == 1 then
+        local vref = math.max(at(ref.speed, dNow) / 3.6, 5)
+        local vp = vNow * math.min(math.max(ref.cSpeed[k] / 3.6 / vref, 0.7), 1.6)
+        local vmin = ref.cMin[k] / 3.6
+        if vp > vmin + 0.5 then
+          local back = (vp * vp - vmin * vmin) / (2 * ref.cDecel[k])
+          b.dynD = a - math.min(math.max(back, 5), ahead(ref.cBrake[k], ref.cApex[k]) + 150)
+        end
+      end
     end
   end
   -- countdown sounds for the next board, fired on the frame where the moment falls within half a frame
@@ -154,35 +168,90 @@ local function updateBoards()
   end
 end
 
+-- your own laps this session, for the "my session best" ghost: position and lap time every 2 m
+local OWN_STEP = 2
+local own = { n = 0, L = 0, cur = nil, best = nil, bestMs = 0, lap = -1, i = -1, valid = true }
+
+local function ownLap() return { x = ffi.new('float[?]', own.n), z = ffi.new('float[?]', own.n), t = ffi.new('float[?]', own.n), filled = 0 } end
+
+local function recordOwn()
+  if own.n == 0 then
+    local len = ac.getSim().trackLengthM or 0
+    if len < 100 then return end
+    own.L, own.n = len, math.ceil(len / OWN_STEP) + 1
+  end
+  if car.lapCount ~= own.lap then
+    -- a lap just ended: keep it if it's your fastest valid, complete one this session
+    local ms = car.previousLapTimeMs or 0
+    if own.cur and own.valid and own.cur.filled > own.n * 0.95 and ms > 0 and (own.bestMs == 0 or ms < own.bestMs) then
+      own.best, own.cur, own.bestMs = own.cur, own.best, ms
+    end
+    own.cur = own.cur or ownLap()
+    own.cur.filled, own.i, own.valid, own.lap = 0, -1, true, car.lapCount
+  end
+  if car.isInPitlane or car.isLapValid == false then own.valid = false end
+  local i = math.floor(car.splinePosition * own.L / OWN_STEP)
+  if i < 0 or i >= own.n or i == own.i then return end
+  local c, x, z, t = own.cur, car.position.x, car.position.z, car.lapTimeMs / 1000
+  if own.i >= 0 and i > own.i and i - own.i < 10 then   -- fill the points skipped since last frame
+    local px, pz, pt = c.x[own.i], c.z[own.i], c.t[own.i]
+    for k = own.i + 1, i do
+      local w = (k - own.i) / (i - own.i)
+      c.x[k], c.z[k], c.t[k] = px + (x - px) * w, pz + (z - pz) * w, pt + (t - pt) * w
+    end
+    c.filled = c.filled + (i - own.i)
+  else
+    c.x[i], c.z[i], c.t[i] = x, z, t
+    c.filled = c.filled + 1
+  end
+  own.i = i
+end
+
+M.ghostStatus = ''
+local gsrc = nil
 local function updateGhost()
   ghostOn = false
-  if not cfg.ghost or car.isInPitlane then return end
+  if not cfg.ghost then M.ghostStatus = 'off' return end
+  -- where the ghost's lap comes from: Ghostline's best lap, or your own session best
+  local X, Z, Tt, N, ST, LEN, MS
+  if cfg.ghostMine then
+    if not own.best then M.ghostStatus = 'waiting for your first complete valid lap' return end
+    X, Z, Tt, N, ST, LEN, MS = own.best.x, own.best.z, own.best.t, own.n, OWN_STEP, own.L, own.bestMs
+  else
+    if not live then M.ghostStatus = 'no best lap from Ghostline for this car here' return end
+    X, Z, Tt, N, ST, LEN, MS = ref.x, ref.z, ref.t, n, step, L, ref.lapMs
+  end
+  if gsrc ~= X then gsrc, gi = X, 0 end
+  if car.isInPitlane then M.ghostStatus = 'hidden in the pits' return end
   local T = car.lapTimeMs / 1000
-  if T > ref.lapMs / 1000 + 2 then return end
-  if gi > 0 and ref.t[gi] > T then gi = 0 end         -- a new lap
-  while gi < n - 2 and ref.t[gi + 1] <= T do gi = gi + 1 end
-  local t0, t1 = ref.t[gi], ref.t[gi + 1]
+  if T > MS / 1000 + 2 then M.ghostStatus = 'finished its lap' return end
+  if gi > 0 and Tt[gi] > T then gi = 0 end         -- a new lap
+  while gi < N - 2 and Tt[gi + 1] <= T do gi = gi + 1 end
+  local t0, t1 = Tt[gi], Tt[gi + 1]
   local w = t1 > t0 and math.min(math.max((T - t0) / (t1 - t0), 0), 1) or 0
-  local gd = (gi + w) * step
-  local gap = ahead(dNow, gd)
-  if gap > L / 2 then gap = gap - L end
-  if math.abs(gap) > 500 then return end              -- out lap, or far away: nothing to see
-  local a, b = gi, (gi + 1) % n
-  local x, z = ref.x[a] + (ref.x[b] - ref.x[a]) * w, ref.z[a] + (ref.z[b] - ref.z[a]) * w
-  local p, q = (gi - 2) % n, (gi + 3) % n
-  local base = ac.trackProgressToWorldCoordinate(gd / L)
+  local gd = (gi + w) * ST
+  local gap = ((gd / LEN - car.splinePosition + 0.5) % 1 - 0.5) * LEN   -- metres, > 0: the ghost is ahead
+  M.gap = gap
+  if math.abs(gap) > 1000 then
+    M.ghostStatus = string.format('hidden, %.1f km %s', math.abs(gap) / 1000, gap > 0 and 'ahead' or 'behind')
+    return
+  end
+  local a, b = gi, (gi + 1) % N
+  local x, z = X[a] + (X[b] - X[a]) * w, Z[a] + (Z[b] - Z[a]) * w
+  local p, q = (gi - 2) % N, (gi + 3) % N
+  local base = ac.trackProgressToWorldCoordinate((gd / LEN) % 1)
   tmp1:set(x, base.y + 4, z)
   local hit = physics.raycastTrack(tmp1, down, 12, nil, nrm)
   local y = (hit and hit >= 0) and base.y + 4 - hit or base.y
   gpos:set(x, y + ride, z)
-  glook:set(ref.x[q] - ref.x[p], 0, ref.z[q] - ref.z[p])
+  glook:set(X[q] - X[p], 0, Z[q] - Z[p])
   if (hit and hit >= 0) and nrm.y > 0.5 then gup:set(nrm.x, nrm.y, nrm.z) else gup:set(0, 1, 0) end
   local len = math.sqrt(glook.x * glook.x + glook.z * glook.z)
   if len < 0.01 then return end
   glook:set(glook.x / len, -(glook.x / len * gup.x + glook.z / len * gup.z) / gup.y, glook.z / len)   -- along the road's slope
   glook:normalize()
   ghostOn = true
-  M.gap = gap
+  M.ghostStatus = string.format('%.0f m %s', math.abs(gap), gap >= 0 and 'ahead' or 'behind')
 end
 
 -- road height under your car, for placing the ghost at the same height above it
@@ -211,12 +280,17 @@ function M.update(dt, simClock)
   car = ac.getCar(0)
   if not car then return end
   if pend and (not ref or not live or car.lapTimeMs < 3000) then activate() end   -- a new best lap: from the next lap on
-  if not live then ghostOn = false return end
-  dNow, vNow, lapT = car.splinePosition * L, car.speedKmh / 3.6, car.lapTimeMs / 1000
-  updateBoards()   -- also behind the racing line and the countdown
+  recordOwn()
   measureRide()
+  vNow, lapT = car.speedKmh / 3.6, car.lapTimeMs / 1000
+  if live then
+    dNow = car.splinePosition * L
+    updateBoards()   -- also behind the racing line and the countdown
+    M.delta = lapT - at(ref.t, dNow)
+  else
+    M.delta = nil
+  end
   updateGhost()
-  M.delta = lapT - at(ref.t, dNow)
   if os.preciseClock then
     local cost = (os.preciseClock() - t0) * 1000
     perf.sum, perf.n, perf.max = perf.sum + cost, perf.n + 1, math.max(perf.max, cost)
@@ -233,12 +307,13 @@ local function lineColour(x)
   for k, b in pairs(boards) do
     if b.apexD then
       local b0 = b.dist > -1e8 and b.dist or b.apexD - 1
-      if x >= b0 and x <= b.apexD then
-        if ref.cKind[k] == 1 then return colR end
-        c = colY
-      elseif (x < b0 and x >= b0 - vNow * CUES[1]) or (x > b.apexD and x <= b.thrD) then
-        c = colY
+      if ref.cKind[k] == 1 and b.dynD then
+        if x >= b.dynD and x <= b.apexD then return colR end                       -- brake
+        if x < b.dynD and x >= b.dynD - vNow * CUES[1] then c = colY end           -- get ready
+      elseif x >= b0 - vNow * CUES[1] and x <= b.apexD then
+        c = colY                                       -- a lift, or slow enough already that a lift will do
       end
+      if x > b.apexD and x <= b.thrD then c = colY end  -- not back on full throttle yet
     end
   end
   return c
@@ -250,7 +325,7 @@ local lineDrawn, chevrons = 0, 0   -- shown in the window
 local function inCorner(x)
   for _, b in pairs(boards) do
     if b.apexD then
-      local b0 = b.dist > -1e8 and b.dist or b.apexD - 1
+      local b0 = math.min(b.dist > -1e8 and b.dist or b.apexD - 1, b.dynD or 1e9)
       if x >= b0 - 120 and x <= b.thrD then return true end
     end
   end
@@ -387,16 +462,16 @@ local function drawGhost()
 end
 
 function M.draw()
-  if not live or not car or car.isInPitlane then return end
+  if not car or car.isInPitlane then return end
   local t0 = os.preciseClock and os.preciseClock() or 0
-  if cfg.line then drawLine() end
-  if cfg.boards then
+  if live and cfg.line then drawLine() end
+  if live and cfg.boards then
     render.setBlendMode(render.BlendMode.AlphaBlend)
     render.setDepthMode(render.DepthMode.ReadOnly)
     for k, b in pairs(boards) do drawBoard(k, b) end
   end
   if ghostOn then drawGhost() end
-  if ghostOn and M.delta then
+  if ghostOn and M.delta and not cfg.ghostMine then
     tmp1:set(gpos.x, gpos.y + 1.8, gpos.z)
     render.debugText(tmp1, string.format('%+.2f', M.delta), rgbm(0.55, 0.8, 1, 0.9), 1.1)
   end
@@ -432,12 +507,18 @@ function M.window()
     if cfg.line then ui.text(string.format('Racing line: %d chevrons, %.0f m ahead, road not found %d times', chevrons, lineDrawn, misses)) end
     if ghostMesh == false then ui.text('Ghost: no car shape from CSP, showing a footprint') end
   end
+  if cfg.ghost then ui.text('Ghost (' .. (cfg.ghostMine and 'your session best' or 'best lap') .. '): ' .. M.ghostStatus) end
   if ui.checkbox('Brake boards', cfg.boards) then cfg.boards = not cfg.boards end
   ui.sameLine()
   if ui.checkbox('Countdown sound', cfg.beep) then cfg.beep = not cfg.beep end
   if ui.checkbox('Racing line', cfg.line) then cfg.line = not cfg.line end
   ui.sameLine()
   if ui.checkbox('3D ghost', cfg.ghost) then cfg.ghost = not cfg.ghost end
+  if cfg.ghost then
+    if ui.radioButton('Ghost: best lap', not cfg.ghostMine) then cfg.ghostMine = false end
+    ui.sameLine()
+    if ui.radioButton('Ghost: my session best', cfg.ghostMine) then cfg.ghostMine = true end
+  end
   if cfg.line then
     if ui.radioButton('Full line', not cfg.cornersOnly) then cfg.cornersOnly = false end
     ui.sameLine()
@@ -462,6 +543,12 @@ function M.info()
   if not live or not ref then return nil end
   return { lapMs = ref.lapMs, driver = str(ref.driver), est = ref.est ~= 0, delta = M.delta,
            brake = at(ref.brake, dNow), throttle = at(ref.throttle, dNow) }
+end
+
+-- for the dash's track map: where the ghost is (nil when it isn't shown)
+function M.ghostAt()
+  if not ghostOn then return nil end
+  return gpos.x, gpos.z
 end
 
 M.cfg = cfg

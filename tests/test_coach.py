@@ -75,6 +75,7 @@ ac = {
   findNodes = function () return { createBoundingSphereNode = function () return node end } end,
   isInReplayMode = function () return false end,
   storage = function (layout) return layout end,
+  getSim = function () return { trackLengthM = refBlock().length } end,
   SimpleMesh = { carShape = function () return 1 end },
   AudioEvent = { fromFile = function (p) return { start = function () sounds[#sounds + 1] = { t = sim.t, f = p.filename } end } end },
 }
@@ -108,26 +109,31 @@ assert lua.eval("tonumber(ffi.sizeof('ghl_ref'))") == coach.SIZE
 g = lua.globals()
 
 
-def drive(factor, fps, until=None):
-    """Drive the lap exactly like the reference, `factor` times as fast. Returns what the app did."""
+def drive(factor, fps, until=None, laps=1, mine=False):
+    """Drive the lap exactly like the reference, `factor` times as fast, `laps` times. Returns what the app did."""
     lua.execute(f"""
     package.loaded['coach'] = nil
     blocks['GhostlineRef.v1'] = ffi.new('uint8_t[?]', {coach.SIZE})
     sounds, drawn = {{}}, {{ quads = {{}}, line = {{}}, text = {{}} }}
-    carState = {{ splinePosition = 0, speedKmh = 0, lapTimeMs = 0, brake = 0, isInPitlane = false, position = vec3() }}
+    carState = {{ splinePosition = 0, speedKmh = 0, lapTimeMs = 0, brake = 0, isInPitlane = false, position = vec3(),
+                 lapCount = 0, previousLapTimeMs = 0, isLapValid = true }}
     """)
     lua.globals().blob = data
     lua.execute(f"ffi.copy(blocks['GhostlineRef.v1'], blob, {coach.SIZE})")
     m = lua.eval("require('coach')")
-    T_end = (until or p["t"][-1]) / factor
+    m.cfg.ghostMine = mine
+    lapT = p["t"][-1] / factor
+    T_end = until / factor if until else lapT * laps
     dt = 1.0 / fps
     out = {"at": {}, "snap": {}}
     clock, T = 0.0, 0.0
     while T < T_end:
-        tr = T * factor
+        lap, Tl = int(T // lapT), T % lapT
+        tr = Tl * factor
         d = float(np.interp(tr, p["t"], p["d"]))
         cs = g.carState
-        cs.splinePosition, cs.speedKmh, cs.lapTimeMs = d / p["L"], float(np.interp(d, p["d"], p["speed"])) * factor, int(T * 1000)
+        cs.splinePosition, cs.speedKmh, cs.lapTimeMs = d / p["L"], float(np.interp(d, p["d"], p["speed"])) * factor, int(Tl * 1000)
+        cs.lapCount, cs.previousLapTimeMs = lap, int(lapT * 1000) if lap else 0
         cs.brake = float(np.interp(d, p["d"], p["brake"]))
         cs.position.x, cs.position.y, cs.position.z = float(np.interp(d, p["d"], p["x"])), 0.45, float(np.interp(d, p["d"], p["z"]))
         g.sim.t = T
@@ -139,9 +145,10 @@ def drive(factor, fps, until=None):
         for k, b in st.boards.items():
             out["at"].setdefault(k, set()).add(round(float(b.at), 3))
         for key, at in (("ghost40", 40.0), ("line", None)):
-            if key == "ghost40" and abs(T - at) < dt / 2:
+            if key == "ghost40" and abs(Tl - at) < dt / 2:
                 gp = st.gpos
-                out["snap"]["ghost"] = ([gp.x, gp.y, gp.z], float(m.gap), d, bool(st.ghostOn))
+                out["snap"]["ghost" if lap == 0 else f"ghost{lap}"] = ([gp.x, gp.y, gp.z], float(m.gap or 0), d, bool(st.ghostOn),
+                                                                     m.ghostStatus.decode() if isinstance(m.ghostStatus, bytes) else m.ghostStatus)
         out.setdefault("frames", []).append((T, d, [tuple(q.values()) for q in g.drawn.line.values()]))
         T += dt
     out["sounds"] = [(float(s.t), s.f.decode()) for s in g.sounds.values()]
@@ -168,7 +175,7 @@ for fps in (60, 120):
     print(f"{fps} fps: brake cue vs reference brake point: worst {np.abs(errs).max() * 1000:.1f} ms over {len(errs)} corners")
 
 # the ghost drives the same lap: it sits on your car
-pos, gap, d, vis = r["snap"]["ghost"]
+pos, gap, d, vis, _ = r["snap"]["ghost"]
 x, z = np.interp(d, p["d"], p["x"]), np.interp(d, p["d"], p["z"])
 assert vis and abs(gap) < 3 and np.hypot(pos[0] - x, pos[2] - z) < 3, (gap, pos, x, z)
 assert abs(pos[1] - 0.45) < 0.05, "ghost at your car's height above the road"
@@ -201,7 +208,7 @@ for k, c in enumerate(corners):
     assert min(abs(s[0] - tb) for s in brakes) <= 0.5 / 60 + 0.002, c["name"]
     checked += 1
 assert checked >= 2, checked
-pos, gap, d, vis = r["snap"]["ghost"]
+pos, gap, d, vis, _ = r["snap"]["ghost"]
 assert gap < -50, f"10% faster: the ghost should be well behind ({gap:.0f} m)"
 assert any(t.decode().startswith("BRAKE") for t in r["text"])
 assert g.drawn.posts and g.drawn.posts > 1000, "an upright board at each corner"
@@ -227,4 +234,23 @@ part = count_at(straight)
 m.cfg.cornersOnly = False
 assert full > 60 and part == 0, (full, part)
 print(f"10% faster: {checked} boards stayed put, countdown on time, ghost {gap:.0f} m behind")
+
+# 10% faster, the racing line turns red earlier than the board: where the best lap's braking from your speed starts
+roggia = next(c for c in corners if c["name"] == "Roggia")
+T0 = t_at(roggia["brake"]) / 1.1 - 1.5
+T, d, cols = min(r["frames"], key=lambda f: abs(f[0] - T0))
+ahead_ix = np.nonzero((p["d"] >= d) & (p["d"] < d + 600))[0]
+where = lambda q: float(p["d"][ahead_ix[np.argmin(np.hypot(p["x"][ahead_ix] - q[0], p["z"][ahead_ix] - q[1]))]])
+red = next(j for j, q in enumerate(cols) if q[2] < 0.3)
+vp, vmin = 1.1 * roggia["speed"] / 3.6, roggia["min"] / 3.6
+want = roggia["apex"] - min(max((vp * vp - vmin * vmin) / (2 * roggia["decel"]), 5), roggia["apex"] - roggia["brake"] + 150)
+assert want < roggia["brake"] - 10 and abs(where(cols[red]) - want) < 8, (where(cols[red]), want, roggia["brake"])
+print(f"10% faster: the line turns red {roggia['brake'] - where(cols[red]):.0f} m before the board (expected {roggia['brake'] - want:.0f})")
+
+# ghost of your own session best: nothing on the first lap, then it drives your lap
+r = drive(1.0, 30, laps=2, mine=True)
+assert not r["snap"]["ghost"][3] and "waiting" in r["snap"]["ghost"][4], r["snap"]["ghost"]
+pos, gap, d, vis, status = r["snap"]["ghost1"]
+assert vis and abs(gap) < 3, (gap, status)
+print(f"session-best ghost: off on lap 1, {gap:+.1f} m from you on lap 2 ({status})")
 print("coach ok, window:", g.lastText.decode())
