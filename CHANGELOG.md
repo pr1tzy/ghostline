@@ -20,7 +20,12 @@ A full dash inside the game, so Ghostline is the only app you need.
   a ghost of your own session best, it shows up to 1 km away, and the window says where it is.
 - **Ghost laps with online lag are thrown out.** A remote car that lags gets teleported ahead; one such lap was
   the Monza "best" (1:16.8, 861 m of jumps) and made the ghost rocket after the chicane and the gap jump by a second.
-  Such laps are now marked invalid, including ones already stored.
+  Such laps aren't kept any more, and ones already stored are removed once at startup.
+- **Other drivers' laps had twice their real lap time** since 2.0 (CSP calls the in-game app twice a frame, and its
+  clock counted both). The app now runs once a frame on the game's own clock; the Standings gaps and the pedal trace
+  were doubled by the same thing.
+- **Laps take 2.6x less space**: stored at the precision they're measured with (existing laps are converted once,
+  with every comparison unchanged).
 - **Easier to find the ghost**: a cyan marker above it, drawn from both sides, and where it is on the dash map.
 - **More on the dash**: a track map with every car and the ghost, race flags (bar along the top), pit limiter, tyre
   compound, damage, and fuel left at the flag in races.

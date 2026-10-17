@@ -18,6 +18,13 @@ repository folder.
 
 The sample laps loaded on first start ship with the program (`samples/`).
 
+**What's stored, and how small**: each lap is one `.npz` file, every channel kept at the precision it's measured
+with (1 ms, 2.5 mm, 0.01 km/h) as differences from the previous sample: about 50 KB a lap, 2.6x smaller than plain
+numbers, with every comparison and tip unchanged (checked on 257 real laps). Other drivers' laps are kept only for
+the three fastest drivers per car and track, and never when they're cut or lagging. The in-game app and the dash
+store nothing but their settings (a few hundred bytes, in `Documents\Assetto Corsa\cfg\extension\state\lua`):
+the pedal trace, the gaps and your session-best ghost live in memory and are gone when the game closes.
+
 ## Cars, tracks and corner names
 
 Track names, lengths and corner names (each track's `data/sections.ini`) and car classes (`ui_car.json` tags and
@@ -77,8 +84,8 @@ page moves every car at its current pace, so the map stays smooth even at low ra
   best clean line. More than 15 m off it, or more than 20 m shorter, and it's dropped. This needs one clean lap of
   your own on that track first.
 - **Online lag**: when a remote car lags, the game teleports it to catch up. A lap where the car moves 25 m or more
-  at over 1.6x its own speed is marked invalid ("position jumps from connection lag"): as a ghost it would leap
-  ahead and make your gap jump by a second. Laps stored before 2.3 are checked once at startup.
+  at over 1.6x its own speed isn't kept: as a ghost it would leap ahead and make your gap jump by a second. Laps
+  stored before 2.3 are checked once at startup. Other drivers' laps that fail a check aren't kept at all.
 - **Estimated pedals**: throttle and brake for other cars are estimated from their speed, and shown dotted.
 
 ## In-game coaching

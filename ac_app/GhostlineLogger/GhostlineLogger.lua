@@ -136,8 +136,17 @@ local function sample(i)
   d.t[i] = clock
 end
 
+local lastFrame = -1
 function script.update(dt)
-  clock = clock + dt
+  -- CSP calls this twice a frame (as the app's update and through [SIM_CALLBACKS]). Adding dt on both calls made
+  -- the clock run at double speed: other drivers' laps came out twice as long. So: one pass per frame, and the
+  -- clock is the game's own.
+  local sim = ac.getSim()
+  if sim.frame and sim.frame == lastFrame then return end
+  lastFrame = sim.frame or -1
+  local now = sim.gameTime or (clock + dt)
+  if clock > 0 then dt = math.max(now - clock, 0) end
+  clock = now
   if coach then runCoach(coach.update, dt, clock) end
   if hud then runHud('update', dt) end
   if not d then

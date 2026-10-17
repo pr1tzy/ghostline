@@ -19,13 +19,13 @@ N, L = 6, 5793.0
 lua.execute("""
 ffi = require('ffi')
 blocks = {}
-sim = { t = 0 }
+sim = { t = 0, frame = 0 }
 local cars = {}
 local speeds = {}
 for i = 0, %d - 1 do speeds[i] = 70 + i * 0.4 end
 ac = {
   getTrackFullID = function(sep) return 'ks_nordschleife' .. sep .. 'nordschleife' end,
-  getSim = function() return { isOnlineRace = true, carsCount = %d } end,
+  getSim = function() return { isOnlineRace = true, carsCount = %d, frame = sim.frame, gameTime = sim.t } end,
   writeMemoryMappedFile = function(name, size)
     local b = ffi.new('uint8_t[?]', size); blocks[name] = { buf = b, size = size }; return ffi.cast('void*', b) end,
   getDriverName = function(i) return 'Lua Driver ' .. i end,
@@ -60,7 +60,9 @@ for step in range(1, 400):
           for i = 1, 63 do w.want[i] = 1 end
           w.sampleHz, w.timingHz, w.liveHz, w.enabled, w.detail = 30, 4, 20, 1, 1
         end""")
+    g.sim.frame = step
     g.script.update(1 / 60.0)
+    g.script.update(1 / 60.0)   # CSP calls it twice a frame: must not count the time twice
 g.lapCb(3, 81234, False, 2, 7)    # the game says car 3's lap 7 was invalid, 2 cuts
 raw = bytes(lua.eval("ffi.string(blocks['GhostlineCars.v1'].buf, blocks['GhostlineCars.v1'].size)"))
 assert len(raw) == carfeed.SIZE, len(raw)
@@ -69,6 +71,8 @@ magic, version, seq = np.frombuffer(raw, "<u4", 3, 0)
 n = int(np.frombuffer(raw, "<i4", 1, 12)[0])
 assert magic == carfeed.MAGIC and version == 1 and seq % 2 == 0 and n == N and raw[32] == 1 and raw[33] == 2
 assert carfeed._str(raw[36:96]) == "ks_nordschleife-nordschleife" and np.frombuffer(raw, "<f8", 1, 24)[0] > 0
+sim_time = float(np.frombuffer(raw, "<f8", 1, 16)[0])
+assert abs(sim_time - g.sim.t) < 1e-6, (sim_time, g.sim.t)   # the game's clock, not dt added up (once ran at 2x)
 assert carfeed._str(raw[3040 + 80:3040 + 120]) == "Lua Driver 2" and carfeed._str(raw[5600 + 48:5600 + 96]) == "ks_ferrari_488_gt3"
 t = g.sim.t
 for i in range(N):

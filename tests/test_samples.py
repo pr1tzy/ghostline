@@ -44,10 +44,26 @@ cols = ["t", "pos", "speed", "x", "z"]
 a = np.c_[raw["t"], pos, raw["speed"], raw["x"], raw["z"]]
 lid = ingest.ingest_rows({"source": "online", "driver": "Lag Test", "car": "lotus_exos_125_s1", "track": "monza",
                           "lap_ms": 90000}, cols, a, origin="test:lag")
-bad = store.get_lap(lid)
-assert bad["valid"] == 0 and "connection lag" in bad["note"], bad
-store.delete_lap(lid)
-laps = store.q("SELECT id, source, track, lap_ms, valid FROM laps ORDER BY id")
+assert lid is None and not store.q("SELECT 1 FROM laps WHERE driver='Lag Test'"), "a lagging ghost lap is not kept"
+
+# compact lap files: every channel comes back within its precision, and an old plain-float file converts once
+# without changing a single comparison
+for l in laps:
+    raw = store.load_lap(l["id"])
+    back = store._unpack(store._pack(raw))
+    for k in raw:
+        assert np.max(np.abs(back[k] - raw[k])) <= store.PACK.get(k, 0) / 2 + 1e-9, (l["id"], k)
+me_l = next(l for l in laps if l["source"] == "player" and l["track"] == "spa")
+ref_l = next(l for l in laps if l["source"] == "online" and l["track"] == "spa")
+before = analysis.compare(me_l["id"], ref_l["id"])
+np.savez_compressed(store.LAPDIR / f"{me_l['id']}.npz", **store.load_lap(me_l["id"]))   # as a pre-2.3 file
+store.kv_set("laps_format", 1)
+store.compact_laps()
+with np.load(store.LAPDIR / f"{me_l['id']}.npz") as z:
+    assert "format" in z.files
+analysis.prep.cache_clear()
+after = analysis.compare(me_l["id"], ref_l["id"])
+assert after["total"] == before["total"] and [c["name"] for c in after["corners"]] == [c["name"] for c in before["corners"]]
 
 # official content only
 assert content.supported("lotus_exos_125_s1", "monza") and content.supported("ks_ferrari_488_gt3", "ks_nordschleife-nordschleife")

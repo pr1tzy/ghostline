@@ -59,14 +59,67 @@ def add_lap(meta, arrays):
              meta.get("origin"), meta.get("note", "")))
         _db.commit()
         lap_id = cur.lastrowid
-    np.savez_compressed(LAPDIR / f"{lap_id}.npz", **{k: np.asarray(v, dtype=float) for k, v in arrays.items()})
+    np.savez_compressed(LAPDIR / f"{lap_id}.npz", **_pack(arrays))
     return lap_id
+
+
+# Laps are stored at the precision they're measured with, as differences from the previous sample: 2.6x smaller
+# than plain floats, and the largest change is 0.5 ms, 2.5 mm or 0.005 km/h. Files from before 2.3 hold plain
+# floats; both load the same way.
+PACK = {"t": 1e-3, "pos": 1e-7, "speed": 0.01, "x": 0.005, "z": 0.005, "throttle": 1e-3, "brake": 1e-3,
+        "steer": 0.01, "gear": 1, "rpm": 1}
+FORMAT = 2
+
+
+def _pack(arrays):
+    out = {"format": np.array([FORMAT])}
+    for k, v in arrays.items():
+        v = np.asarray(v, dtype=float)
+        scale = PACK.get(k)
+        if scale is not None and len(v) and np.all(np.isfinite(v)):
+            d = np.diff(np.round(v / scale).astype(np.int64), prepend=0)
+            if np.abs(d).max() < 2 ** 31:
+                out["q_" + k] = d.astype(np.int32)
+                continue
+        out[k] = v
+    return out
+
+
+def _unpack(z):
+    keys = z.files if hasattr(z, "files") else z.keys()   # a loaded .npz, or a dict from _pack
+    return {(k[2:] if k.startswith("q_") else k):
+            (np.cumsum(z[k].astype(np.int64)) * PACK[k[2:]] if k.startswith("q_") else z[k].astype(float))
+            for k in keys if k != "format"}
 
 
 @lru_cache(maxsize=64)
 def _load(lap_id):
     with np.load(LAPDIR / f"{lap_id}.npz") as z:
-        return {k: z[k] for k in z.files}
+        return _unpack(z)
+
+
+def compact_laps():
+    """One-time (2.3): rewrite lap files from before the compact format. Each file is checked after packing and only
+    replaced if every value comes back within its precision; the swap is atomic."""
+    if kv_get("laps_format") == FORMAT:
+        return
+    for f in sorted(LAPDIR.glob("*.npz")):
+        try:
+            with np.load(f) as z:
+                if "format" in z.files:
+                    continue
+                raw = {k: z[k] for k in z.files}
+            packed = _pack(raw)
+            back = _unpack(packed)
+            if any(np.max(np.abs(back[k] - raw[k]), initial=0) > PACK.get(k, 0) / 2 + 1e-9 for k in raw):
+                continue   # not exact enough: keep the original
+            tmp = f.with_suffix(".tmp.npz")
+            np.savez_compressed(tmp, **packed)
+            os.replace(tmp, f)
+        except Exception as e:
+            print("compact failed", f.name, e)
+    _load.cache_clear()
+    kv_set("laps_format", FORMAT)
 
 
 def load_lap(lap_id):

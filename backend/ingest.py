@@ -179,6 +179,9 @@ def ingest_rows(meta, header, a, origin):
                                              col("x") if "x" in header else None, col("z") if "z" in header else None)
         if n:
             valid, note = 0, json.dumps({"cut": f"position jumps from connection lag ({n}, {skipped:.0f} m)"})
+    if not valid and meta.get("source") in ("online", "ai"):
+        print("ghost lap not kept:", store.parse_note(note).get("cut", "invalid"))   # never a ghost or a reference
+        return None
     return store.add_lap(
         {"source": meta.get("source", "import"), "driver": meta.get("driver", ""), "car": meta.get("car", "unknown"),
          "track": track, "lap_ms": int(float(meta.get("lap_ms", a[-1, 0] * 1000))),
@@ -222,6 +225,7 @@ class Watcher(threading.Thread):
             recheck_ghosts()
             recheck_jumps()
             explain_my_invalid_laps()
+            store.compact_laps()
         except Exception as e:
             print("recheck failed", e)
         store.prune_all()
@@ -279,8 +283,8 @@ def recheck_ghosts():
 
 
 def recheck_jumps():
-    """One-time (2.3): other drivers' laps already stored with position jumps from online lag are marked invalid,
-    so they're never a ghost or a reference again (one of them made the ghost leap ahead after Monza's chicane)."""
+    """One-time (2.3): other drivers' laps with position jumps from online lag are deleted (one of them made the ghost
+    leap ahead after Monza's chicane), and so are other drivers' laps already marked invalid: they're never used."""
     if store.kv_get("jump_check"):
         return
     for l in store.q("SELECT id, track FROM laps WHERE source IN ('online','ai') AND valid=1"):
@@ -288,8 +292,9 @@ def recheck_jumps():
         if all(k in raw for k in ("t", "pos", "speed")):
             n, skipped = analysis.position_jumps(l["track"], raw["t"], raw["pos"], raw["speed"], raw.get("x"), raw.get("z"))
             if n:
-                note = json.dumps({"cut": f"position jumps from connection lag ({n}, {skipped:.0f} m)"})
-                store.q("UPDATE laps SET valid=0, note=? WHERE id=?", (note, l["id"]))
+                store.delete_lap(l["id"])
+    for l in store.q("SELECT id FROM laps WHERE source IN ('online','ai') AND valid=0"):   # rejected ghosts: never used
+        store.delete_lap(l["id"])
     store.kv_set("jump_check", 1)
 
 
