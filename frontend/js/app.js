@@ -902,7 +902,7 @@ async function storyPage(view) {
     ['Now', '2.3', 'The only app you need', 'One dash with standings and live gaps, timing, gear and delta, pedals, tyres and a track map. A racing line like the F1 games\', red where you\'d have to brake at the speed you\'re carrying. And every lap checked for a bad recording before it can become anyone\'s ghost.'],
   ];
   const built = [
-    ['Tested on every change', 'Six test suites run on every push. The in-game apps run in LuaJIT against a fake game, frame by frame, at 60 and 120 fps; the recorder runs against a fake game ten times faster than real time.'],
+    ['Tested on every change', 'Seven test suites run on every push. The in-game apps run in LuaJIT against a fake game, frame by frame, at 60 and 120 fps; the recorder runs against a fake game ten times faster than real time.'],
     ['Light in the game', 'In tests the logger costs about 0.001 ms a frame and coaching about 0.002 ms. The Ghostline window in the game shows the real numbers on your PC.'],
     ['Data you can trust', 'Before a lap is kept it\'s checked: time against speed and distance, holes, line to line, lag jumps, cuts. When the checks get better, stored laps are checked again.'],
     ['Private by design', 'No account, no cookies, nothing uploaded. Everything stays on your PC; a public copy is read-only and shows other drivers by their initials.'],

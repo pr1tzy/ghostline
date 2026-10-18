@@ -4,6 +4,13 @@
 
 A full dash inside the game, so Ghostline is the only app you need.
 
+- **Fixes game crashes with 2.2's in-game app.** Six crash reports from 2.2 sessions point at the sound library and
+  at the graphics driver right after the 3D ghost loaded the car's model. Every countdown cue made a new sound that
+  was never freed (18 a lap); now there's one per sound, freed when the app unloads. The ghost no longer loads a
+  model at all: it uses CSP's built-in car shape.
+- **The in-game app is never swapped under a running game.** Started with the game, Ghostline updated the app
+  mid-session, and CSP reloads it on the spot; that reload crashed the game. Updates now wait until the game is
+  closed, and an older Ghostline never replaces a newer in-game app.
 - **One horizontal dash** (Ghostline Dash) with six sections you can switch off one by one: Standings (relative
   with live gaps, or the full order), Timing (lap, sectors, last / best / ghost, position, fuel and laps left), Gear
   + delta (rev bar, gear, speed, ABS / TC / bias / DRS, gap to the best lap or session best, predicted lap), Pedals

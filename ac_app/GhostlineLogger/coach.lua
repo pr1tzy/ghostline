@@ -108,12 +108,26 @@ local function load()
   seen, spare, pend = r, nil, copy
 end
 
+-- One audio event per sound, made once and played again for every cue. CSP keeps an event alive until it's
+-- disposed, so a new one per cue (2.2) piled up hundreds of FMOD events in a session; and they're disposed when the
+-- script unloads, so FMOD never plays one that belongs to a script that's gone.
+local sounds = {}
 local function sound(file)
   if not cfg.beep or ac.isInReplayMode and ac.isInReplayMode() then return end
   pcall(function ()
-    local e = ac.AudioEvent.fromFile({ filename = (__dirname or '.') .. '/' .. file, use3D = false, loop = false }, false)
-    e.volume = 0.8
+    local e = sounds[file]
+    if not e then
+      e = ac.AudioEvent.fromFile({ filename = (__dirname or '.') .. '/' .. file, use3D = false, loop = false }, false)
+      e.volume = 0.8
+      sounds[file] = e
+    end
     e:start()
+  end)
+end
+if ac.onRelease then
+  ac.onRelease(function ()
+    for _, e in pairs(sounds) do pcall(function () e:dispose() end) end
+    sounds = {}
   end)
 end
 

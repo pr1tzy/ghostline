@@ -68,15 +68,71 @@ def _same(a, b):
     return a.exists() and filecmp.cmp(a, b, shallow=False)
 
 
+def _lua_version(folder):
+    """VERSION from an in-game app's manifest.ini, as a tuple (2, 3); () if there's none."""
+    try:
+        m = re.search(r"^\s*VERSION\s*=\s*([\d.]+)", (folder / "manifest.ini").read_text(errors="ignore"), re.M)
+        return tuple(int(x) for x in m.group(1).split(".") if x) if m else ()
+    except OSError:
+        return ()
+
+
+def ac_running():
+    """Is Assetto Corsa (acs.exe) running? Looked up with the Windows process list, no console window."""
+    if os.name != "nt":
+        return False
+    from ctypes import wintypes as wt
+
+    class Entry(ctypes.Structure):
+        _fields_ = [("dwSize", wt.DWORD), ("cntUsage", wt.DWORD), ("th32ProcessID", wt.DWORD),
+                    ("th32DefaultHeapID", ctypes.c_size_t), ("th32ModuleID", wt.DWORD), ("cntThreads", wt.DWORD),
+                    ("th32ParentProcessID", wt.DWORD), ("pcPriClassBase", ctypes.c_long), ("dwFlags", wt.DWORD),
+                    ("szExeFile", ctypes.c_wchar * 260)]
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
+    k32.CreateToolhelp32Snapshot.argtypes = (wt.DWORD, wt.DWORD)
+    k32.Process32FirstW.argtypes = k32.Process32NextW.argtypes = (ctypes.c_void_p, ctypes.POINTER(Entry))
+    k32.CloseHandle.argtypes = (ctypes.c_void_p,)
+    snap = k32.CreateToolhelp32Snapshot(2, 0)   # TH32CS_SNAPPROCESS
+    if not snap or snap == ctypes.c_void_p(-1).value:
+        return False
+    try:
+        e = Entry()
+        e.dwSize = ctypes.sizeof(Entry)
+        ok = k32.Process32FirstW(snap, ctypes.byref(e))
+        while ok:
+            if e.szExeFile.lower() == "acs.exe":
+                return True
+            ok = k32.Process32NextW(snap, ctypes.byref(e))
+        return False
+    finally:
+        k32.CloseHandle(snap)
+
+
+def lua_plan():
+    """What to do with the CSP in-game app: "current", "install", "wait" or "newer".
+    CSP reloads a Lua app the moment its files change, in the middle of a session; with the app's sounds and the
+    3D ghost loaded, that reload can take the game down. So a loaded app is only replaced while the game is closed
+    ("wait" until then), and never by an older version ("newer": a newer one was copied in by hand)."""
+    ld = lua_dir()
+    if ld is None or all(_same(ld / f.relative_to(LUA_SRC), f) for f in LUA_SRC.rglob("*") if f.is_file()):
+        return "current"
+    if not (ld / "GhostlineLogger.lua").exists():
+        return "install"   # first install: nothing loaded yet (the game picks it up next session)
+    if _lua_version(ld) > _lua_version(LUA_SRC):
+        return "newer"
+    return "wait" if ac_running() else "install"
+
+
 def app_status():
     d, ld = app_dir(), lua_dir()
     installed = bool(d and (d / "RaceLogger.py").exists())
-    current = installed and _same(d / "RaceLogger.py", APP_SRC / "RaceLogger.py") and \
-        (ld is None or all(_same(ld / f.relative_to(LUA_SRC), f) for f in LUA_SRC.rglob("*") if f.is_file()))   # fonts/ too
+    lua = lua_plan()
+    current = installed and _same(d / "RaceLogger.py", APP_SRC / "RaceLogger.py") and lua in ("current", "newer")
     ini = documents() / "Assetto Corsa" / "cfg" / "python.ini"
     active = ini.exists() and re.search(r"\[RACELOGGER\]\s*ACTIVE\s*=\s*1", ini.read_text(errors="ignore"), re.I) is not None
     return {"ac_path": str(find_ac() or ""), "installed": installed, "current": bool(current), "active": active,
-            "csp": bool(ld), "lua": bool(ld and (ld / "GhostlineLogger.lua").exists()),
+            "csp": bool(ld), "lua": bool(ld and (ld / "GhostlineLogger.lua").exists()), "lua_update": lua,
             "logs": str(d / "logs") if d else "", "inbox": str(store.INBOX)}
 
 
@@ -89,7 +145,7 @@ def install_app():
     for old in ("live.json", "live.json.tmp"):   # the app shares data through memory now
         (d / old).unlink(missing_ok=True)
     write_launch_cfg()
-    if lua_dir():
+    if lua_plan() == "install":   # see lua_plan: never under a running session, never older over newer
         shutil.copytree(LUA_SRC, lua_dir(), dirs_exist_ok=True)
     ini = documents() / "Assetto Corsa" / "cfg" / "python.ini"
     if ini.parent.exists():
@@ -140,7 +196,9 @@ def ensure_app():
     try:
         s = app_status()
         if s["ac_path"] and not (s["current"] and s["active"]):
-            s = install_app()
+            s = install_app()   # leaves a loaded CSP app alone while the game runs (lua_plan)
+        if s.get("lua_update") == "wait":
+            print("In-game app update waits until Assetto Corsa is closed")
         return s
     except Exception as e:
         return {"error": str(e)}
@@ -254,8 +312,14 @@ class Watcher(threading.Thread):
             store.tidy()
         except Exception as e:
             print("tidy failed", e)
+        waiting, check = lua_dir() is not None and lua_plan() == "wait", time.time() + 60
         while True:
             self.scan()
+            if waiting and time.time() > check:   # an in-game app update that waited for the game to close
+                check = time.time() + 60
+                if not ac_running():
+                    ensure_app()
+                    waiting = lua_plan() == "wait"
             time.sleep(2)
 
 

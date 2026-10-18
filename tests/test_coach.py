@@ -45,6 +45,7 @@ lua.execute(r"""
 ffi = require('ffi')
 package.path = '%s/?.lua;' .. package.path
 blocks, sounds, sim, carState = {}, {}, { t = 0 }, nil
+audio = { made = 0, disposed = 0 }
 local V = {}; V.__index = V
 function vec3(x, y, z) return setmetatable({ x = x or 0, y = y or 0, z = z or 0 }, V) end
 function V:set(x, y, z) self.x, self.y, self.z = x, y, z return self end
@@ -77,7 +78,11 @@ ac = {
   storage = function (layout) return layout end,
   getSim = function () return { trackLengthM = refBlock().length } end,
   SimpleMesh = { carShape = function () return 1 end },
-  AudioEvent = { fromFile = function (p) return { start = function () sounds[#sounds + 1] = { t = sim.t, f = p.filename } end } end },
+  AudioEvent = { fromFile = function (p)
+    audio.made = audio.made + 1
+    return { start = function () sounds[#sounds + 1] = { t = sim.t, f = p.filename } end,
+             dispose = function () audio.disposed = audio.disposed + 1 end } end },
+  onRelease = function (fn) audio.release = fn end,
 }
 physics = { raycastTrack = function (pos, dir, len, point, normal) if normal then normal:set(0, 1, 0) end return pos.y end }
 drawn = { quads = {}, line = {}, text = {} }
@@ -116,6 +121,7 @@ def drive(factor, fps, until=None, laps=1, mine=False):
     package.loaded['coach'] = nil
     blocks['GhostlineRef.v1'] = ffi.new('uint8_t[?]', {coach.SIZE})
     sounds, drawn = {{}}, {{ quads = {{}}, line = {{}}, text = {{}} }}
+    audio = {{ made = 0, disposed = 0 }}
     carState = {{ splinePosition = 0, speedKmh = 0, lapTimeMs = 0, brake = 0, isInPitlane = false, position = vec3(),
                  lapCount = 0, previousLapTimeMs = 0, isLapValid = true }}
     """)
@@ -174,6 +180,11 @@ for fps in (60, 120):
     ticks = [s for s in r["sounds"] if s[1].endswith("tick.wav")]
     assert len(ticks) >= 2 * len(errs), len(ticks)
     print(f"{fps} fps: brake cue vs reference brake point: worst {np.abs(errs).max() * 1000:.1f} ms over {len(errs)} corners")
+    # every cue reuses one audio event per sound (2.2 made a new one per cue and never freed it), and both are freed
+    # when the script unloads
+    assert g.audio.made <= 2 < len(r["sounds"]), (g.audio.made, len(r["sounds"]))
+    g.audio.release()
+    assert g.audio.disposed == g.audio.made, (g.audio.disposed, g.audio.made)
 
 # the ghost drives the same lap: it sits on your car
 pos, gap, d, vis, _ = r["snap"]["ghost"]

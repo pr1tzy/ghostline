@@ -65,7 +65,7 @@ you drive. They disappear once your own laps start coming in.
 
 ### Built to be used
 
-- **Tested on every change.** Six test suites run on every push, including the in-game apps in LuaJIT against a
+- **Tested on every change.** Seven test suites run on every push, including the in-game apps in LuaJIT against a
   fake game, frame by frame, and the recorder against a fake game running ten times faster than real time.
 - **Light.** In tests the in-game logger costs about 0.001 ms a frame and coaching about 0.002 ms; the Ghostline
   window in the game shows the real numbers on your PC.
