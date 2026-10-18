@@ -454,8 +454,14 @@ local function drawGhost()
   if ghostMesh then
     ghostVals.gAlpha = cfg.alpha * near
     render.setCullMode(render.CullMode.None)   -- both sides: stays visible even if the shape comes out mirrored
+    -- the shape is in your car's model space: place it the way your own body is placed (car.bodyTransform), moved
+    -- from where your car is to where the ghost is. mat4x4.look() is a view matrix (world to that spot), so the
+    -- ghost's side is inverted; used on its own, as before, it drew the ghost far off the track
+    local toGhost = mat4x4.look(gpos, glook, gup):inverseSelf()
+    local transform = car.bodyTransform and car.bodyTransform:mul(mat4x4.look(car.position, car.look, car.up)):mulSelf(toGhost)
+      or toGhost
     render.mesh({
-      mesh = ghostMesh, transform = mat4x4.look(gpos, glook, gup), textures = {}, values = ghostVals, cacheKey = 7151,
+      mesh = ghostMesh, transform = transform, textures = {}, values = ghostVals, cacheKey = 7151,
       shader = [[
         float4 main(PS_IN pin) {
           float3 n = normalize(pin.NormalW);

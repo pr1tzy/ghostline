@@ -54,7 +54,52 @@ function vec2(x, y) return { x = x, y = y } end
 function rgbm(r, g, b, m) return { r = r, g = g, b = b, mult = m } end
 local any = setmetatable({}, { __index = function () return function (self) return self end end })
 ghost = { pos = nil, visible = false }
-mat4x4 = { look = function (p, l, u) ghost.pos = { p.x, p.y, p.z } return {} end }
+-- 4x4 matrices like CSP's (row vectors: point * matrix; a:mul(b) applies a, then b)
+local M4 = {}; M4.__index = M4
+local function m4(r) return setmetatable({ r = r }, M4) end
+function M4:mul(o)
+  local c = {}
+  for i = 1, 4 do c[i] = {} for j = 1, 4 do local s = 0 for k = 1, 4 do s = s + self.r[i][k] * o.r[k][j] end c[i][j] = s end end
+  return m4(c)
+end
+function M4:mulSelf(o) self.r = self:mul(o).r return self end
+function M4:inverse()
+  local a = {}
+  for i = 1, 4 do a[i] = {} for j = 1, 4 do a[i][j], a[i][j + 4] = self.r[i][j], i == j and 1 or 0 end end
+  for c = 1, 4 do
+    local q = c
+    for i = c + 1, 4 do if math.abs(a[i][c]) > math.abs(a[q][c]) then q = i end end
+    a[c], a[q] = a[q], a[c]
+    local d = a[c][c]
+    for j = 1, 8 do a[c][j] = a[c][j] / d end
+    for i = 1, 4 do if i ~= c then local f = a[i][c] for j = 1, 8 do a[i][j] = a[i][j] - f * a[c][j] end end end
+  end
+  local r = {}
+  for i = 1, 4 do r[i] = { a[i][5], a[i][6], a[i][7], a[i][8] } end
+  return m4(r)
+end
+function M4:inverseSelf() self.r = self:inverse().r return self end
+function M4:point(x, y, z)
+  local r = self.r
+  return x * r[1][1] + y * r[2][1] + z * r[3][1] + r[4][1], x * r[1][2] + y * r[2][2] + z * r[3][2] + r[4][2],
+         x * r[1][3] + y * r[2][3] + z * r[3][3] + r[4][3]
+end
+mat4x4 = {
+  -- a view matrix, like CSP's: world to the frame at p looking along l
+  look = function (p, l, u)
+    local z = vec3(l.x, l.y, l.z):normalize()
+    local x = vec3(u.y * z.z - u.z * z.y, u.z * z.x - u.x * z.z, u.x * z.y - u.y * z.x):normalize()
+    local y = vec3(z.y * x.z - z.z * x.y, z.z * x.x - z.x * x.z, z.x * x.y - z.y * x.x)
+    return m4({ { x.x, y.x, z.x, 0 }, { x.y, y.y, z.y, 0 }, { x.z, y.z, z.z, 0 },
+      { -(x.x * p.x + x.y * p.y + x.z * p.z), -(y.x * p.x + y.y * p.y + y.z * p.z), -(z.x * p.x + z.y * p.y + z.z * p.z), 1 } })
+  end,
+  translation = function (v) return m4({ { 1, 0, 0, 0 }, { 0, 1, 0, 0 }, { 0, 0, 1, 0 }, { v.x, v.y, v.z, 1 } }) end,
+}
+-- your car's body: its model's origin sits a little off car.position, as in a real car
+function updBody()
+  local c = carState
+  c.bodyTransform = mat4x4.translation(vec3(0.1, -0.3, 0.2)):mul(mat4x4.look(c.position, c.look, c.up):inverse())
+end
 local node = setmetatable({
   setVisible = function (self, v) ghost.visible = v end,
   setPosition = function (self, p) ghost.pos = { p.x, p.y, p.z } end,
@@ -88,7 +133,16 @@ physics = { raycastTrack = function (pos, dir, len, point, normal) if normal the
 drawn = { quads = {}, line = {}, text = {} }
 render = {
   BlendMode = { AlphaBlend = 1 }, DepthMode = { ReadOnly = 1, ReadOnlyLessEqual = 4 }, CullMode = { None = 2, Back = 1 },
-  mesh = function (t) ghost.drawn = (ghost.drawn or 0) + 1 end,
+  mesh = function (t)
+    -- where the ghost's shape lands: the point of the model at your car's position, and 2 m ahead of it
+    ghost.drawn = (ghost.drawn or 0) + 1
+    local inv, P, L = carState.bodyTransform:inverse(), carState.position, carState.look
+    local ax, ay, az = inv:point(P.x, P.y, P.z)
+    local bx, by, bz = inv:point(P.x + 2 * L.x, P.y + 2 * L.y, P.z + 2 * L.z)
+    local wx, wy, wz = t.transform:point(ax, ay, az)
+    local fx, fy, fz = t.transform:point(bx, by, bz)
+    ghost.at, ghost.ahead = { wx, wy, wz }, { fx - wx, fy - wy, fz - wz }
+  end,
   setBlendMode = function () end, setDepthMode = function () end, setCullMode = function () end,
   on = function (name, fn) drawFn = fn end,
   glBegin = function () end, glEnd = function () end,
@@ -123,6 +177,7 @@ def drive(factor, fps, until=None, laps=1, mine=False):
     sounds, drawn = {{}}, {{ quads = {{}}, line = {{}}, text = {{}} }}
     audio = {{ made = 0, disposed = 0 }}
     carState = {{ splinePosition = 0, speedKmh = 0, lapTimeMs = 0, brake = 0, isInPitlane = false, position = vec3(),
+                 look = vec3(0.6, 0, 0.8), up = vec3(0, 1, 0),
                  lapCount = 0, previousLapTimeMs = 0, isLapValid = true }}
     """)
     lua.globals().blob = data
@@ -143,6 +198,7 @@ def drive(factor, fps, until=None, laps=1, mine=False):
         cs.lapCount, cs.previousLapTimeMs = lap, int(lapT * 1000) if lap else 0
         cs.brake = float(np.interp(d, p["d"], p["brake"]))
         cs.position.x, cs.position.y, cs.position.z = float(np.interp(d, p["d"], p["x"])), 0.45, float(np.interp(d, p["d"], p["z"]))
+        g.updBody()
         g.sim.t = T
         clock += dt
         m.update(dt, clock)
@@ -225,6 +281,11 @@ assert gap < -50, f"10% faster: the ghost should be well behind ({gap:.0f} m)"
 assert any(t.decode().startswith("BRAKE") for t in r["text"])
 assert g.drawn.posts and g.drawn.posts > 1000, "an upright board at each corner"
 assert g.ghost.drawn and g.ghost.drawn > 1000, "the ghost silhouette is drawn when it's away from your car"
+# and it's drawn where the ghost is, facing along its line (2.3 before this fix drew it far off the track)
+st = lua.eval("require('coach')").state()
+at, ahead = list(g.ghost.at.values()), list(g.ghost.ahead.values())
+assert np.hypot(at[0] - st.gpos.x, at[2] - st.gpos.z) < 0.01 and abs(at[1] - st.gpos.y) < 0.01, (at, st.gpos.x, st.gpos.z)
+assert np.allclose(ahead, [2 * st.glook.x, 2 * st.glook.y, 2 * st.glook.z], atol=0.01), (ahead, st.glook.x, st.glook.z)
 # corners only: on the straight after the line (no corner within the 250 m drawn) nothing is drawn; full draws it all
 m = lua.eval("require('coach')")
 
