@@ -80,7 +80,7 @@ for l in laps:
     r = local.get(f"/api/compare?a={l['id']}&ideal=true")
     mine = analysis.player_best_ids(store.get_lap(l["id"])["car"], l["track"])
     assert r.status_code == (200 if mine else 404), (l, r.status_code)
-for p in ("/", "/laps", "/stats", "/live", "/refs", f"/compare/{laps[0]['id']}"):
+for p in ("/", "/laps", "/stats", "/live", "/refs", "/story", "/get", f"/compare/{laps[0]['id']}"):
     assert local.get(p).status_code == 200, p
 assert local.get("/nope").status_code == 404
 st = local.get("/api/state").json()

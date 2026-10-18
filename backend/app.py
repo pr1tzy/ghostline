@@ -347,14 +347,15 @@ FRONT = store.ROOT / "frontend"
 
 
 PAGES = {   # title, description per page (the frontend mirrors this for in-app navigation)
-    "": ("Ghostline", "Sim racing telemetry lab. Every lap against the fastest drivers, corner by corner."),
+    "": ("Ghostline", "Assetto Corsa telemetry: every lap against the fastest drivers on your server, coached on the track and debriefed corner by corner."),
     "laps": ("Laps", "Every logged lap: mine and the fastest clean ghost laps, by car and track."),
     "compare": ("Delta", "Two laps on one distance grid: delta, speed, inputs and the corners where the time goes."),
     "stats": ("Stats", "Ghost leaderboard with sector times, the ideal lap and lap time progress."),
     "session": ("Session", "One session lap by lap: consistency, spread and best sectors."),
     "live": ("Live", "Live timing from the car: deltas, sectors, standings, tyres and fuel."),
     "refs": ("References", "Where the reference laps come from: online ghosts and real-world data."),
-    "get": ("Get Ghostline", "Free and open source. Download, double-click start.bat, drive. Windows and Assetto Corsa."),
+    "get": ("Get Ghostline", "Free and open source for Windows and Assetto Corsa. Download, install, drive: laps, ghosts, coaching and a full dash."),
+    "story": ("The story", "How Ghostline started, what it has become and what is coming next."),
     "404": ("Not found", "Nothing at this address."),
 }
 
@@ -388,7 +389,7 @@ def robots():
 def sitemap():
     if not PUBLIC_HOST:
         raise HTTPException(404)
-    urls = "".join(f"  <url><loc>https://{PUBLIC_HOST}/{p}</loc></url>\n" for p in ("", "get", "laps", "stats", "live", "refs"))
+    urls = "".join(f"  <url><loc>https://{PUBLIC_HOST}/{p}</loc></url>\n" for p in ("", "story", "get", "laps", "stats", "live", "refs"))
     return Response(f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n{urls}</urlset>\n',
                     media_type="application/xml")
 

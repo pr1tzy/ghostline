@@ -78,7 +78,7 @@ function bind(view) {
 }
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg;
-  gsap.timeline().fromTo(t, { yPercent: 150 }, { yPercent: 0, duration: 0.6, ease }).to(t, { yPercent: 150, duration: 0.5, ease: 'expo.in' }, '+=3');
+  gsap.timeline().fromTo(t, { yPercent: 250 }, { yPercent: 0, duration: 0.6, ease }).to(t, { yPercent: 250, duration: 0.5, ease: 'expo.in' }, '+=3');
 }
 const mix = (a, b, t) => { const p = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)); const A = p(a), B = p(b); return `rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(',')})`; };
 function trackPath(x, z, box = 100, pad = 6) {
@@ -114,17 +114,18 @@ const wipe = $('.wipe'), wtitle = $('.wipe-title');
 const wipeIn = title => { wtitle.textContent = title; return gsap.timeline().set(wipe, { transformOrigin: 'bottom' }).fromTo(wipe, { scaleY: 0 }, { scaleY: 1, duration: 0.65, ease: 'expo.inOut' }).fromTo(wtitle, { yPercent: 60, opacity: 0 }, { yPercent: 0, opacity: 1, duration: 0.5, ease }, '-=.3'); };
 const wipeOut = () => gsap.timeline().to(wtitle, { yPercent: -60, opacity: 0, duration: 0.4, ease: 'expo.in' }).set(wipe, { transformOrigin: 'top' }).to(wipe, { scaleY: 0, duration: 0.75, ease: 'expo.inOut' }, '-=.1');
 const settle = (tl, ms) => Promise.race([tl, new Promise(r => setTimeout(r, ms))]);   // never hang on a paused animation
-const pages = { 404: notFound, '': home, laps: dash, compare, stats: statsPage, session: sessionPage, live: livePage, refs, get: getPage };
-const titles = { '': 'Ghostline', laps: 'Laps', compare: 'Delta', stats: 'Stats', session: 'Session', live: 'Live', refs: 'Refs', get: 'Get it', 404: '404' };
+const pages = { 404: notFound, '': home, laps: dash, compare, stats: statsPage, session: sessionPage, live: livePage, refs, get: getPage, story: storyPage };
+const titles = { '': 'Ghostline', laps: 'Laps', compare: 'Delta', stats: 'Stats', session: 'Session', live: 'Live', refs: 'Refs', get: 'Get it', story: 'Story', 404: '404' };
 const descs = {   // mirrors PAGES in backend/app.py
-  '': 'Sim racing telemetry lab. Every lap against the fastest drivers, corner by corner.',
+  '': 'Assetto Corsa telemetry: every lap against the fastest drivers on your server, coached on the track and debriefed corner by corner.',
   laps: 'Every logged lap: mine and the fastest clean ghost laps, by car and track.',
   compare: 'Two laps on one distance grid: delta, speed, inputs and the corners where the time goes.',
   stats: 'Ghost leaderboard with sector times, the ideal lap and lap time progress.',
   session: 'One session lap by lap: consistency, spread and best sectors.',
   live: 'Live timing from the car: deltas, sectors, standings, tyres and fuel.',
   refs: 'Where the reference laps come from: online ghosts and real-world data.',
-  get: 'Free and open source. Download, double-click start.bat, drive. Windows and Assetto Corsa.',
+  get: 'Free and open source for Windows and Assetto Corsa. Download, install, drive: laps, ghosts, coaching and a full dash.',
+  story: 'How Ghostline started, what it has become and what is coming next.',
   404: 'Nothing at this address.' };
 function notFound(view) { view.innerHTML = `<section class="empty"><div class="eyebrow">404 / <b>off track</b></div>
   <h1 class="mega split">Wrong<br><em>turn</em></h1><p>Nothing at this address. The link may be old or the lap may have been pruned.</p>
@@ -141,7 +142,7 @@ async function route() {
     if (s.ghostline?.update) setTimeout(() => toast(`Ghostline ${s.ghostline.update.version} is out: see References`), 2500);
   }
   if (!first) await settle(wipeIn(titles[page]), 900);
-  document.title = page ? `${page === '404' ? 'Not found' : page === 'refs' ? 'References' : page === 'get' ? 'Get Ghostline' : titles[page]} · Ghostline` : 'Ghostline';
+  document.title = page ? `${page === '404' ? 'Not found' : page === 'refs' ? 'References' : page === 'get' ? 'Get Ghostline' : page === 'story' ? 'The story' : titles[page]} · Ghostline` : 'Ghostline';
   $('meta[name="description"]').content = descs[page];
   if (my !== seq) return;                       // a newer navigation took over
   cleanup?.(); io?.disconnect(); cleanup = null;
@@ -263,7 +264,7 @@ async function home(view) {
     <div>
       <div class="eyebrow"><span class="pill-live ${live.recording ? 'on' : ''}" id="hlive"><i></i><span>${live.recording ? 'On track right now' : 'Sim racing telemetry lab'}</span></span></div>
       <h1 class="mega split" style="margin-top:22px">Chase<br>the <em>ghost</em></h1>
-      <p class="lede">Every lap I drive in Assetto Corsa, raced against the fastest driver on the same server. Lined up metre by metre, so the lost time gets a name.</p>
+      <p class="lede">Every lap you drive in Assetto Corsa, raced against the fastest driver on your server: on the track while you drive it, and metre by metre afterwards, so the lost time gets a name.</p>
       <div class="ctas"><a class="btn solid" href="/compare" data-hover><span>See where the time goes</span></a><a class="btn" href="/live" data-hover><span>Watch live</span></a><a class="btn" href="/get" data-hover><span>Get your own</span></a></div>
     </div>
     ${c ? `<div class="hud"><div><small>${esc(c.track_name)} / me</small><b>${fmt(c.a.lap_ms)}</b></div><div><small>Ghost</small><b class="ghost">${fmt(c.b.lap_ms)}</b></div><div><small>Gap on track</small><b id="hgap">±0.000</b></div></div>` : ''}
@@ -284,9 +285,13 @@ async function home(view) {
     <div class="steps">
       <div class="step" data-reveal><div class="no">01</div><div><h3 class="wide">Drive</h3><p>Every lap is recorded at 60 Hz straight from the game: speed, throttle, brake, gear and the exact line. Nothing to start, nothing to export.</p></div>${vizDrive(c)}</div>
       <div class="step" data-reveal><div class="no">02</div><div><h3 class="wide">Catch ghosts</h3><p>An in-game logger captures every other car on the server. Laps that cut the track are thrown out, and only the three fastest drivers stay as ghosts.</p></div>${vizGhosts(sb)}</div>
-      <div class="step" data-reveal><div class="no">03</div><div><h3 class="wide">Debrief</h3><p>Laps are lined up metre by metre. Braking points, apex speed and throttle pick-up turn the gap into three things to fix.</p></div>${vizDebrief(c)}</div>
-      <div class="step" data-reveal><div class="no">04</div><div><h3 class="wide">Any track</h3><p>Car, track and layout are picked up from the game. Names, lengths and corner names come from the official Assetto Corsa content, so a new combo needs no setup.</p></div>${vizTracks(ct)}</div>
+      <div class="step" data-reveal><div class="no">03</div><div><h3 class="wide">Coach on the track</h3><p>The best lap for your car goes into the game: a brake board at every corner with a countdown timed from your speed, a racing line that turns red where you'd have to brake, a see-through 3D ghost, and one dash that replaces every other app.</p></div>
+        <div class="viz"><div class="files pairs mono"><span class="hl">Brake boards</span><span>one per corner, where the best lap braked</span><span class="hl">Countdown</span><span>tick, tick, brake, from the speed you carry</span><span class="hl">Racing line</span><span>chevrons, green, yellow and red</span><span class="hl">3D ghost</span><span>the best lap, with the gap above it</span><span class="hl">Dash</span><span>standings, timing, delta, pedals, tyres, map</span></div>
+        <div class="viz-cap mono"><span>In the game, with Custom Shaders Patch</span><span>Only you see it, online too</span></div></div></div>
+      <div class="step" data-reveal><div class="no">04</div><div><h3 class="wide">Debrief</h3><p>Laps are lined up metre by metre. Braking points, apex speed and throttle pick-up turn the gap into three things to fix.</p></div>${vizDebrief(c)}</div>
+      <div class="step" data-reveal><div class="no">05</div><div><h3 class="wide">Any track</h3><p>Car, track and layout are picked up from the game. Names, lengths and corner names come from the official Assetto Corsa content, so a new combo needs no setup.</p></div>${vizTracks(ct)}</div>
     </div>
+    <p class="mono" style="margin-top:40px">Two weeks from one question to all of this: <a href="/story" data-hover>the story</a>, and what's coming next.</p>
   </section>
   <section class="outro"><a href="/laps" class="mega outro-link" data-hover data-label="Open">Every<br><em>lap</em> &rarr;</a></section>`;
   view.addEventListener('click', e => { const r = e.target.closest('[data-go]'); if (r) nav.to = r.dataset.go; });
@@ -853,7 +858,7 @@ async function getPage(view) {
   <section class="get-hero">
     <div class="eyebrow">Get it / <b>free and open source</b></div>
     <h1 class="mega split">Race your<br>own <em>ghosts</em></h1>
-    <p class="lead">Ghostline runs on your own PC next to Assetto Corsa. It records your laps, logs the fastest drivers on your server and shows you where the time goes. No account, nothing uploaded.</p>
+    <p class="lead">Ghostline runs on your own PC next to Assetto Corsa. It records your laps, keeps the fastest drivers on your server as ghosts, coaches you on the track with brake boards, a racing line and a 3D ghost, and shows you afterwards where the time went. No account, nothing uploaded.</p>
     <div class="ctas">${ext(DOWNLOAD, 'Download for Windows', true)}${ext(REPO, 'View on GitHub')}</div>
     <p class="mono need">Windows 10 or 11 · Assetto Corsa on Steam · Content Manager optional · about 25 MB · no admin rights needed</p>
     <p class="mono need"><a href="${REPO}#privacy" target="_blank" rel="noopener" data-hover>Privacy</a>: Ghostline only goes online when you ask it to.</p>
@@ -882,6 +887,58 @@ async function getPage(view) {
     </div>
     <p class="mono" style="margin-top:40px">Stuck? <a href="${REPO}/issues" target="_blank" rel="noopener" data-hover>Open an issue on GitHub</a>. More detail in the <a href="${REPO}#readme" target="_blank" rel="noopener" data-hover>README</a>.</p>
   </section>`;
+}
+
+/* ---------- page: story ---------- */
+async function storyPage(view) {
+  const ext = (href, label, solid) => `<a class="btn${solid ? ' solid' : ''}" href="${href}" target="_blank" rel="noopener" data-hover><span>${label}</span></a>`;
+  const rel = v => `${REPO}/releases/tag/v${v}`;
+  const when = [
+    ['Oct 4, 2026', 'Lap 1', 'A question at Monza', 'Lapping a Lotus Exos 125 S1 online, a handful of drivers were always quicker, and nothing showed where. Telemetry apps record your own laps; nobody hands you theirs. But the game itself sees every car on the server, so a small in-game app could log the fastest ones as they drove.'],
+    ['Oct 6', '1.0', 'First public release', 'Your laps recorded automatically, ghosts of the three fastest drivers per car and track, laps lined up metre by metre, and a debrief in plain words: "Roggia: brake 14 m later". Plus a live page for a second monitor and stats.', '1.0.0'],
+    ['Oct 8', '2.0', 'Almost free in the game', 'The in-game side rebuilt around shared memory: it copies each car\'s numbers and nothing else, about 0.02 ms a frame, or 0.001 ms with Custom Shaders Patch.', '2.0.0'],
+    ['Oct 8', '2.1', 'A real Windows app', 'An installer with no admin prompt, an icon by the clock, starts with your Assetto Corsa session and closes after it. Every release built by GitHub from the public source, with checksums and a build-provenance record.', '2.1.0'],
+    ['Oct 16', '2.2', 'Coaching on the track', 'The best lap for your car moved into the game: brake boards where it braked, a tick-tick-brake countdown timed from your own speed, and a see-through 3D ghost with the gap above it.', '2.2.0'],
+    ['Now', '2.3', 'The only app you need', 'One dash with standings and live gaps, timing, gear and delta, pedals, tyres and a track map. A racing line like the F1 games\', red where you\'d have to brake at the speed you\'re carrying. And every lap checked for a bad recording before it can become anyone\'s ghost.'],
+  ];
+  const built = [
+    ['Tested on every change', 'Six test suites run on every push. The in-game apps run in LuaJIT against a fake game, frame by frame, at 60 and 120 fps; the recorder runs against a fake game ten times faster than real time.'],
+    ['Light in the game', 'In tests the logger costs about 0.001 ms a frame and coaching about 0.002 ms. The Ghostline window in the game shows the real numbers on your PC.'],
+    ['Data you can trust', 'Before a lap is kept it\'s checked: time against speed and distance, holes, line to line, lag jumps, cuts. When the checks get better, stored laps are checked again.'],
+    ['Private by design', 'No account, no cookies, nothing uploaded. Everything stays on your PC; a public copy is read-only and shows other drivers by their initials.'],
+    ['Small on disk', 'Each lap is stored at the precision it\'s measured with, about 50 KB. Old logs, orphaned files and stale images are cleaned up on every start.'],
+    ['Open source', 'MIT licensed. Releases are built, self-tested and checksummed by GitHub Actions, straight from the code you can read.'],
+  ];
+  const next = [
+    ['Corner notes in the game', 'A line after every corner while you drive: "Pouhon: braked 9 m early, -0.12 s".'],
+    ['Ghost files', 'Send a lap to a friend and race their ghost, plus a consistency ghost of your typical lap.'],
+    ['Real pedals for every ghost', 'Other drivers\' throttle and brake straight from the game where Custom Shaders Patch allows it, so their brake boards are exact instead of estimated.'],
+    ['A signed installer', 'No more "Windows protected your PC" on the first run.'],
+    ['A shared ghost library', 'Opt-in: fast laps for every car and track, without having raced those drivers first.'],
+  ];
+  view.innerHTML = `
+  <section class="get-hero">
+    <div class="eyebrow">Story / <b>from one question to a full app</b></div>
+    <h1 class="mega split">Where did<br>the <em>time</em> go?</h1>
+    <p class="lead">Ghostline started as one driver's question in Assetto Corsa. Two weeks later it records every lap, keeps the fastest drivers on your server as ghosts, coaches you on the track and replaces every other app on the screen.</p>
+    <div class="ctas"><a class="btn solid" href="/get" data-hover><span>Get Ghostline</span></a>${ext(REPO, 'Read the code')}</div>
+  </section>
+  <section>
+    <h2 class="big split-in">How it<br><em>grew</em></h2>
+    <ol class="timeline">${when.map(([d, v, h, p, tag]) => `<li data-reveal class="${d === 'Now' ? 'now' : ''}">
+      <span class="mono when">${d}</span><span class="ver">${tag ? `<a href="${rel(tag)}" target="_blank" rel="noopener" data-hover>${v}</a>` : v}</span>
+      <div><h3 class="wide">${h}</h3><p>${p}</p></div></li>`).join('')}</ol>
+  </section>
+  <section>
+    <h2 class="big split-in">Built to<br><em>be used</em></h2>
+    <div class="faq">${built.map(([h, p]) => `<div data-reveal><h3 class="wide">${h}</h3><p>${p}</p></div>`).join('')}</div>
+  </section>
+  <section>
+    <h2 class="big split-in">What's<br><em>next</em></h2>
+    <ol class="fix">${next.map(([h, p], i) => `<li data-reveal><span class="n">0${i + 1} / 0${next.length}</span><h3 class="wide">${h}</h3><p>${p}</p></li>`).join('')}</ol>
+    <p class="mono" style="margin-top:40px">Ideas and bugs: <a href="${REPO}/issues" target="_blank" rel="noopener" data-hover>open an issue on GitHub</a>. Every change is in the <a href="${REPO}/blob/main/CHANGELOG.md" target="_blank" rel="noopener" data-hover>changelog</a>.</p>
+  </section>
+  <section class="outro"><a href="/get" class="mega outro-link" data-hover data-label="Get it">Race your<br><em>ghost</em> &rarr;</a></section>`;
 }
 
 async function refs(view) {

@@ -4,11 +4,11 @@
 
 A full dash inside the game, so Ghostline is the only app you need.
 
-- **One horizontal dash** (Ghostline Dash) with five sections you can switch off one by one: Standings (relative
+- **One horizontal dash** (Ghostline Dash) with six sections you can switch off one by one: Standings (relative
   with live gaps, or the full order), Timing (lap, sectors, last / best / ghost, position, fuel and laps left), Gear
   + delta (rev bar, gear, speed, ABS / TC / bias / DRS, gap to the best lap or session best, predicted lap), Pedals
-  (with the best lap's brake and throttle at the same spot, a 4 second trace and steering) and Tyres (temperatures
-  against the tyre's optimum, pressure, wear, brakes).
+  (with the best lap's brake and throttle at the same spot, a 4 second trace and steering), Tyres (temperatures
+  against the tyre's optimum, pressure, wear, brakes) and Map (every car and the ghost).
 - In Ghostline's own style and fonts: a solid slab with cut corners and hairlines, violet for you, cyan for the ghost.
 - **Brake boards stay put**: one sign per corner, on the outside, where the best lap braked. The countdown still
   comes from your speed.
@@ -35,9 +35,13 @@ A full dash inside the game, so Ghostline is the only app you need.
   one install) go, the log stays under 1 MB, and a file that can't be read is moved aside instead of being retried
   every 2 seconds.
 - **Lap ids are never reused**, so a share link can't end up showing a different lap after pruning.
+- **The site tells the story**: a new Story page (how Ghostline started, what it has become and what's next), the
+  home page shows the coaching in the game, and fresh screenshots in the README. On phones the footer links no
+  longer run off the screen, long driver names shorten instead of pushing the times out, and a stray corner of the
+  hidden notice at the bottom left is gone.
 - **Easier to find the ghost**: a cyan marker above it, drawn from both sides, and where it is on the dash map.
-- **More on the dash**: a track map with every car and the ghost, race flags (bar along the top), pit limiter, tyre
-  compound, damage, and fuel left at the flag in races.
+- **More on the dash**: race flags (bar along the top), pit limiter, tyre compound, damage, and fuel left at the
+  flag in races.
 - **Compare no longer fails** on laps where a chicane's two halves were merged into one corner, and the ideal-lap
   compare says "no laps of yours yet" instead of failing for cars you haven't driven.
 

@@ -4,20 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Ghostline</title>
-<meta name="description" content="Sim racing telemetry lab. Every lap against the fastest drivers, corner by corner.">
+<meta name="description" content="Assetto Corsa telemetry: every lap against the fastest drivers on your server, coached on the track and debriefed corner by corner.">
 <meta name="theme-color" content="#07060d">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Ghostline">
 <meta property="og:url" content="/">
 <meta property="og:title" content="Ghostline: find the lost time">
-<meta property="og:description" content="Sim racing telemetry lab. Every lap against the fastest drivers, corner by corner.">
+<meta property="og:description" content="Assetto Corsa telemetry: every lap against the fastest drivers on your server, coached on the track and debriefed corner by corner.">
 <meta property="og:image" content="/img/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Ghostline logo over a racing line">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Ghostline: find the lost time">
-<meta name="twitter:description" content="Sim racing telemetry lab. Every lap against the fastest drivers, corner by corner.">
+<meta name="twitter:description" content="Assetto Corsa telemetry: every lap against the fastest drivers on your server, coached on the track and debriefed corner by corner.">
 <meta name="twitter:image" content="/img/og.png">
 <link rel="icon" href="/favicon.ico" sizes="32x32">
 <link rel="icon" href="/img/favicon.svg" type="image/svg+xml">
@@ -38,9 +38,10 @@
   </a>
   <nav>
     <a class="roll" href="/laps" data-hover><span>Laps</span><span>Laps</span></a>
-    <a class="roll" href="/compare" data-hover><span>Compare</span><span>Compare</span></a>
+    <a class="roll cmp" href="/compare" data-hover><span>Compare</span><span>Compare</span></a>
     <a class="roll" href="/stats" data-hover><span>Stats</span><span>Stats</span></a>
     <a class="roll" href="/live" data-hover><span>Live</span><span>Live</span></a>
+    <a class="roll story" href="/story" data-hover><span>Story</span><span>Story</span></a>
     <a class="roll get" href="/get" data-hover><span>Get it</span><span>Get it</span></a>
   </nav>
   <a class="sig" id="rec" href="/live" data-hover aria-label="Live status"><svg class="sig-ring" aria-hidden="true" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" class="trk"/><circle cx="18" cy="18" r="15" class="prog"/><circle cx="18" cy="18" r="4" class="core"/></svg><span class="sig-txt"><small id="sigk">Status</small><b id="sigv">Offline</b></span></a>
@@ -48,7 +49,7 @@
 <main id="view"></main>
 <footer class="foot">
   <div><span class="wide">Ghostline</span><span class="mono">Sim racing telemetry lab · <a href="https://github.com/pr1tzy/ghostline/releases" target="_blank" rel="noopener" data-hover>v{{version}}</a></span><span class="mono note">No cookies, no tracking. Other drivers shown by initials.</span></div>
-  <nav class="mono"><a href="/laps" data-hover>Laps</a><a href="/stats" data-hover>Stats</a><a href="/refs" data-hover>References</a><a href="/get" data-hover>Get it</a><a href="https://github.com/pr1tzy/ghostline" target="_blank" rel="noopener" data-hover>GitHub</a><a href="https://github.com/pr1tzy/ghostline#privacy" target="_blank" rel="noopener" data-hover>Privacy</a></nav>
+  <nav class="mono"><a href="/laps" data-hover>Laps</a><a href="/stats" data-hover>Stats</a><a href="/refs" data-hover>References</a><a href="/story" data-hover>Story</a><a href="/get" data-hover>Get it</a><a href="https://github.com/pr1tzy/ghostline" target="_blank" rel="noopener" data-hover>GitHub</a><a href="https://github.com/pr1tzy/ghostline#privacy" target="_blank" rel="noopener" data-hover>Privacy</a></nav>
   <a class="mono credit" href="https://github.com/pr1tzy/ghostline" target="_blank" rel="noopener" data-hover>Ghostline on GitHub &#8599;</a>
 </footer>
 <div class="preview" id="preview" aria-hidden="true"><svg viewBox="0 0 100 100"></svg></div>
