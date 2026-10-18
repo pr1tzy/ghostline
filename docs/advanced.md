@@ -25,6 +25,18 @@ the three fastest drivers per car and track, and never when they're cut or laggi
 store nothing but their settings (a few hundred bytes, in `Documents\Assetto Corsa\cfg\extension\state\lua`):
 the pedal trace, the gaps and your session-best ghost live in memory and are gone when the game closes.
 
+**Bad recordings**: every lap is checked when it's recorded. Its samples must cover the lap's time (within 2%), add
+up to the track's length from speed and time (within 5%: a recorder clock at the wrong speed fails this), run from
+line to line, and have no hole longer than 3 s (1 s for other drivers' laps, which are replayed as ghosts). Other
+drivers' laps that fail aren't kept. Yours are kept, marked **Bad data** with the reason, and never count as a best
+or a reference. Stored laps go through the checks again whenever they change (once per version).
+
+**Housekeeping**, every start: lap files without a lap and laps without a file are removed, share images go after a
+week (they're rebuilt when asked for), the 1.x in-game app's old lap logs are deleted, and `ghostline.log` is kept
+under 1 MB (the one before is `ghostline.old.log`). CSV files you drop in `data/inbox` are moved to
+`inbox/processed`; one that can't be read goes to `inbox/failed`. Lap ids are never reused, so a share link always
+shows the laps it was made for.
+
 ## Cars, tracks and corner names
 
 Track names, lengths and corner names (each track's `data/sections.ini`) and car classes (`ui_car.json` tags and
@@ -84,8 +96,8 @@ page moves every car at its current pace, so the map stays smooth even at low ra
   best clean line. More than 15 m off it, or more than 20 m shorter, and it's dropped. This needs one clean lap of
   your own on that track first.
 - **Online lag**: when a remote car lags, the game teleports it to catch up. A lap where the car moves 25 m or more
-  at over 1.6x its own speed isn't kept: as a ghost it would leap ahead and make your gap jump by a second. Laps
-  stored before 2.3 are checked once at startup. Other drivers' laps that fail a check aren't kept at all.
+  at over 1.6x its own speed isn't kept: as a ghost it would leap ahead and make your gap jump by a second. Its lap
+  time is also checked against the game's own for that car. Other drivers' laps that fail a check aren't kept.
 - **Estimated pedals**: throttle and brake for other cars are estimated from their speed, and shown dotted.
 
 ## In-game coaching

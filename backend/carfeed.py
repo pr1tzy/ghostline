@@ -23,6 +23,7 @@ SIZE, WANT_SIZE, SET_SIZE, MAXC = 8672, 96, 16, 64
 MAGIC, WANT_MAGIC, SET_MAGIC = 0x314C4847, 0x32574847, 0x31534847   # "GHL1", "GHW2", "GHS1"
 POLL, ROW_EVERY, MAX_ROWS = 0.01, 0.045, 20 * 600   # read 100 times a second, keep ~20 samples a second per car
 SETTLE = 1.0          # wait this long after a car crosses the line, so the game's own lap verdict has arrived
+GAME_WAIT = 3.0       # and up to this much longer for the game's time for the lap, to check ours against
 COLS = ("t", "pos", "speed", "x", "z", "gear")
 
 FIELDS = {   # name: (offset, dtype, count)
@@ -170,6 +171,8 @@ class CarFeed(threading.Thread):
         if st is None or st["key"] != key:   # new car in this slot
             self.st[i] = {"key": key, "rows": None, "last": pos, "tp": t, "start": 0.0, "pit": False, "rt": -1.0}
             return
+        if int(f["last"][i]) != st.get("lv"):   # when the game's last lap time changed: see _save
+            st["lv"], st["lv_t"] = int(f["last"][i]), t
         if t <= st["tp"]:
             return   # no new sample yet
         if st["last"] > 0.9 and pos < 0.1:   # crossed the line: interpolate the exact moment
@@ -178,7 +181,8 @@ class CarFeed(threading.Thread):
             if st["rows"] is not None:
                 self.pending.append({"due": now + self.settle, "i": i, "rows": st["rows"], "lap_s": cross - st["start"],
                                      "pit": st["pit"], "driver": driver, "car": car, "track": track, "online": online,
-                                     "laps": int(f["laps"][i]), "writer": writer, "wall": now})
+                                     "laps": int(f["laps"][i]), "writer": writer, "wall": now,
+                                     "cross": cross, "key": key})
             st["rows"], st["start"], st["pit"], st["rt"] = [], cross, False, -1.0
         elif st["rows"] is not None and pos < st["last"] - 0.05:
             st["rows"] = None   # reset / back to the pits
@@ -197,7 +201,7 @@ class CarFeed(threading.Thread):
     def _finish_due(self, f, writer, now):
         keep = []
         for p in self.pending:
-            if p["due"] > now:
+            if p["due"] > now or (self._game_time(p, f) is None and now < p["due"] + GAME_WAIT):
                 keep.append(p)
                 continue
             try:
@@ -206,10 +210,25 @@ class CarFeed(threading.Thread):
                 print("ghost lap failed", e)
         self.pending = keep
 
+    def _game_time(self, p, f):
+        """The game's own time for this lap (ms) once it has arrived: the car's last lap time changed around the
+        moment it crossed the line. None until then."""
+        i = p["i"]
+        st, game = self.st.get(i) or {}, int(f["last"][i])
+        if game > 0 and st.get("key") == p["key"] and st.get("lv") == game and st.get("lv_t", -1e9) >= p["cross"] - 1.0:
+            return game
+        return None
+
     def _save(self, p, f, writer):
         if p["pit"] or len(p["rows"]) < 100 or p["lap_s"] < 20:
             return
         i, valid, note = p["i"], 1, ""
+        # if our time is more than 2% off the game's, the clock the samples were taken with can't be trusted (2.2's
+        # ran at double speed). The lap check in ingest (time and speed against the track length) catches that too.
+        game = self._game_time(p, f)
+        if game and abs(p["lap_s"] * 1000 - game) > 0.02 * game:
+            print(f"ghost lap not kept: timed {p['lap_s']:.3f} s, the game says {game / 1000:.3f} s")
+            return
         # CSP reports the game's own verdict for every car; it refers to this lap if its lap count matches
         if p["writer"] == 2 and int(f["valid_lap"][i]) == int(f["laps"][i]) and int(f["laps"][i]) >= p["laps"]:
             if not f["lap_valid"][i]:

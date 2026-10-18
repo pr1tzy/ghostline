@@ -432,6 +432,37 @@ def position_jumps(track, t, pos, speed, x=None, z=None):
     return int(bad.sum()), float(dd[bad].sum())
 
 
+def lap_problems(track, raw, lap_ms, ghost=False):
+    """What's wrong with a lap's recording, in plain words, or None if nothing is. Catches a recorder clock running at
+    the wrong speed (time and speed don't add up to the track's length), holes in the recording, and laps that weren't
+    recorded from line to line. A ghost lap gets stricter limits: it's replayed sample by sample.
+    Measured on 270 real laps: good laps are within 0.1% on time, 0.7% on distance, gaps under 1.4 s (2.2 and earlier
+    lost up to 1.9 s after the line while saving the previous lap) and cover 99.9% of the lap."""
+    t, sp, pos = raw.get("t"), raw.get("speed"), raw.get("pos")
+    if t is None or sp is None or pos is None or len(t) < 100:
+        return "too few samples"
+    t, sp = np.asarray(t, float), np.asarray(sp, float)
+    if not (np.all(np.isfinite(t)) and np.all(np.isfinite(sp))):
+        return "broken samples"
+    dt = np.diff(t)
+    if dt.min() < -1e-6:
+        return "time runs backwards"
+    span = (t[-1] - t[0]) * 1000
+    if lap_ms <= 0 or abs(span / lap_ms - 1) > 0.02:
+        return f"samples cover {span / 1000:.1f} s of a {lap_ms / 1000:.1f} s lap"
+    gap = float(dt.max())
+    if gap > (1.0 if ghost else 3.0):
+        return f"{gap:.1f} s gap in the recording"
+    d = np.unwrap(np.asarray(pos, float) * 2 * np.pi) / (2 * np.pi)
+    if d[-1] - d[0] < 0.97:
+        return f"only {(d[-1] - d[0]) * 100:.0f}% of the lap recorded"
+    L = track_length(track, raw if "x" in raw else None)
+    dist = float(np.sum((sp[1:] + sp[:-1]) / 2 * dt)) / 3.6
+    if abs(dist / L - 1) > 0.05:
+        return f"speed and time add up to {dist:.0f} m on a {L:.0f} m track"
+    return None
+
+
 def cut_reason(track, x, z, off_pos=None):
     """Plain words for why a lap is invalid: a shortcut through a corner, or wheels off somewhere."""
     chk = line_check(track, x, z)
@@ -447,3 +478,7 @@ def cut_reason(track, x, z, off_pos=None):
 def corner_at(track, dist):
     names = store.track_cfg(track).get("corners", [])
     return min(names, key=lambda c: _off(c, dist))[1] if names else f"{dist} m"
+
+
+# a deleted lap's id must never come back from a cache
+store.on_delete += [prep.cache_clear, _ideal.cache_clear, _line_ref.cache_clear]

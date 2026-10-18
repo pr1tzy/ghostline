@@ -168,25 +168,34 @@ def ingest_rows(meta, header, a, origin):
     if meta.get("source") in ("online", "ai", "player") and not content.supported(meta.get("car", ""), meta.get("track", "")):
         return None   # mod content: versions differ between servers, so the laps aren't comparable
     valid, note = int(meta.get("valid", 1)), meta.get("note", "")
-    track = meta.get("track", "unknown")
-    if valid and meta.get("source") in ("online", "ai") and "x" in header:
-        chk = analysis.line_check(track, a[:, header.index("x")], a[:, header.index("z")])
-        if chk and chk["cut"]:
-            valid, note = 0, json.dumps({"cut": f"off line {chk['dev']} m at {analysis.corner_at(track, chk['at'])}"})
-    if valid and meta.get("source") in ("online", "ai") and all(k in header for k in ("t", "pos", "speed")):
-        col = lambda k: a[:, header.index(k)]
-        n, skipped = analysis.position_jumps(track, col("t"), col("pos"), col("speed"),
-                                             col("x") if "x" in header else None, col("z") if "z" in header else None)
-        if n:
-            valid, note = 0, json.dumps({"cut": f"position jumps from connection lag ({n}, {skipped:.0f} m)"})
-    if not valid and meta.get("source") in ("online", "ai"):
-        print("ghost lap not kept:", store.parse_note(note).get("cut", "invalid"))   # never a ghost or a reference
-        return None
+    track, source = meta.get("track", "unknown"), meta.get("source", "import")
+    lap_ms = int(float(meta.get("lap_ms", a[-1, 0] * 1000)))
+    cols = {c: a[:, i] for i, c in enumerate(header)}
+    if source in ("online", "ai"):
+        if not valid or ghost_problem(track, cols, lap_ms):
+            return None   # never a ghost or a reference, so not kept
+    elif source == "player" and valid:
+        why = analysis.lap_problems(track, cols, lap_ms)
+        if why:
+            valid, note = 0, json.dumps({"cut": "recording problem: " + why})
     return store.add_lap(
-        {"source": meta.get("source", "import"), "driver": meta.get("driver", ""), "car": meta.get("car", "unknown"),
-         "track": track, "lap_ms": int(float(meta.get("lap_ms", a[-1, 0] * 1000))),
-         "valid": valid, "has_inputs": int("throttle" in header and "brake" in header), "origin": origin, "note": note},
-        {c: a[:, i] for i, c in enumerate(header)})
+        {"source": source, "driver": meta.get("driver", ""), "car": meta.get("car", "unknown"), "track": track,
+         "lap_ms": lap_ms, "valid": valid, "has_inputs": int("throttle" in header and "brake" in header),
+         "origin": origin, "note": note}, cols)
+
+
+def ghost_problem(track, cols, lap_ms):
+    """Why another driver's lap can't be a ghost, or None: a cut, position jumps from online lag (the game teleports a
+    lagging car; as a ghost it would leap ahead), or a recording that doesn't add up (analysis.lap_problems)."""
+    if "x" in cols:
+        chk = analysis.line_check(track, cols["x"], cols["z"])
+        if chk and chk["cut"]:
+            return f"off line {chk['dev']} m at {analysis.corner_at(track, chk['at'])}"
+    if all(k in cols for k in ("t", "pos", "speed")):
+        n, skipped = analysis.position_jumps(track, cols["t"], cols["pos"], cols["speed"], cols.get("x"), cols.get("z"))
+        if n:
+            return f"position jumps from connection lag ({n}, {skipped:.0f} m)"
+    return analysis.lap_problems(track, cols, lap_ms, ghost=True)
 
 
 class Watcher(threading.Thread):
@@ -195,12 +204,14 @@ class Watcher(threading.Thread):
         self.last = []
 
     def scan(self):
+        """CSV laps: files you drop in data/inbox are moved to inbox/processed (they're yours); the ones the 1.x in-game
+        app wrote to its logs folder are deleted once stored. A file that can't be read goes to `failed` once it's a
+        minute old (a younger one may still be being written), so it isn't retried, and logged, every 2 seconds."""
         touched = set()
-        dirs = [store.INBOX] + ([app_dir() / "logs"] if app_dir() else [])
-        for d in dirs:
+        dirs = [(store.INBOX, True)] + ([(app_dir() / "logs", False)] if app_dir() else [])
+        for d, keep in dirs:
             if not d.exists():
                 continue
-            done = d / "processed"
             for f in sorted(d.glob("*.csv")):
                 try:
                     lap_id = ingest_csv(f)
@@ -210,12 +221,21 @@ class Watcher(threading.Thread):
                         l = store.get_lap(lap_id)
                         if l["source"] in ("online", "ai"):
                             touched.add((l["car"], l["track"]))
-                    done.mkdir(exist_ok=True)
-                    shutil.move(str(f), done / f.name)
+                    if keep:
+                        (d / "processed").mkdir(exist_ok=True)
+                        shutil.move(str(f), d / "processed" / f.name)
+                    else:
+                        f.unlink()
                 except PermissionError:
                     pass   # still being written
                 except Exception as e:
-                    print("ingest failed", f.name, e)
+                    try:
+                        if time.time() - f.stat().st_mtime > 60:
+                            (d / "failed").mkdir(exist_ok=True)
+                            shutil.move(str(f), d / "failed" / f.name)
+                            print("ingest failed (moved to failed):", f.name, e)
+                    except OSError:
+                        pass
         for car, track in touched:
             store.prune(car, track)
 
@@ -223,12 +243,17 @@ class Watcher(threading.Thread):
         try:
             load_samples()
             recheck_ghosts()
-            recheck_jumps()
+            recheck_laps()
             explain_my_invalid_laps()
             store.compact_laps()
+            drop_old_logs()
         except Exception as e:
             print("recheck failed", e)
-        store.prune_all()
+        try:
+            store.prune_all()
+            store.tidy()
+        except Exception as e:
+            print("tidy failed", e)
         while True:
             self.scan()
             time.sleep(2)
@@ -282,20 +307,50 @@ def recheck_ghosts():
     store.kv_set("cut_check", CUT_CHECK_VERSION)
 
 
-def recheck_jumps():
-    """One-time (2.3): other drivers' laps with position jumps from online lag are deleted (one of them made the ghost
-    leap ahead after Monza's chicane), and so are other drivers' laps already marked invalid: they're never used."""
-    if store.kv_get("jump_check"):
+LAP_CHECKS = 1   # bump whenever ghost_problem / analysis.lap_problems change: stored laps are checked again
+
+
+def recheck_laps():
+    """Stored laps go through the same checks as new ones, once per version of the checks. Other drivers' laps that
+    fail are deleted (as ghosts they'd leap ahead or run at the wrong speed; one made the ghost jump a second after
+    Monza's chicane), and so are the ones already marked invalid: they're never used. Your own laps are never
+    deleted: one that fails is kept, but no longer counts as a best or a reference, with the reason."""
+    if store.kv_get("lap_checks") == LAP_CHECKS:
         return
-    for l in store.q("SELECT id, track FROM laps WHERE source IN ('online','ai') AND valid=1"):
+    dropped = flagged = 0
+    for l in store.q("SELECT id, source, track, lap_ms, valid, note FROM laps WHERE source IN ('player','online','ai')"):
+        if l["source"] != "player" and not l["valid"]:
+            store.delete_lap(l["id"])
+            dropped += 1
+            continue
+        if not l["valid"]:
+            continue
         raw = store.load_lap(l["id"])
-        if all(k in raw for k in ("t", "pos", "speed")):
-            n, skipped = analysis.position_jumps(l["track"], raw["t"], raw["pos"], raw["speed"], raw.get("x"), raw.get("z"))
-            if n:
+        if l["source"] != "player":
+            if ghost_problem(l["track"], raw, l["lap_ms"]):
                 store.delete_lap(l["id"])
-    for l in store.q("SELECT id FROM laps WHERE source IN ('online','ai') AND valid=0"):   # rejected ghosts: never used
-        store.delete_lap(l["id"])
-    store.kv_set("jump_check", 1)
+                dropped += 1
+        elif why := analysis.lap_problems(l["track"], raw, l["lap_ms"]):
+            try:
+                old = json.loads(l["note"] or "{}")
+            except ValueError:
+                old = {}
+            note = {**(old if isinstance(old, dict) else {}), "cut": "recording problem: " + why}
+            store.q("UPDATE laps SET valid=0, note=? WHERE id=?", (json.dumps(note), l["id"]))
+            flagged += 1
+    if dropped or flagged:
+        print(f"lap checks: {dropped} ghost laps removed, {flagged} of your laps no longer count")
+    store.kv_set("lap_checks", LAP_CHECKS)
+
+
+def drop_old_logs():
+    """1.x's in-game app logged every lap as a CSV and kept a copy in logs/processed (76 MB on one install). They're
+    all stored by now (recheck_ghosts read them once more), so they go."""
+    d = app_dir()
+    if not d or store.kv_get("cut_check") != CUT_CHECK_VERSION:
+        return
+    for f in (d / "logs" / "processed").glob("*.csv"):
+        f.unlink(missing_ok=True)
 
 
 # ---------- Real-world reference (OpenF1: free, seasons from 2023, no extra packages) ----------

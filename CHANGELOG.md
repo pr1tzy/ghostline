@@ -26,6 +26,15 @@ A full dash inside the game, so Ghostline is the only app you need.
   were doubled by the same thing.
 - **Laps take 2.6x less space**: stored at the precision they're measured with (existing laps are converted once,
   with every comparison unchanged).
+- **Your laps no longer miss their first second.** Saving the previous lap held up recording, so 44 of 257 laps
+  were missing 0.6-1.9 s after the line. Laps are now saved alongside.
+- **Every lap is checked for a bad recording**: time, distance from speed, holes, line to line; other drivers' laps
+  also against the game's own lap time. Other drivers' laps that fail aren't kept; yours are kept as **Bad data**
+  and never count as a best. Stored laps are checked again whenever the checks change.
+- **Housekeeping at every start**: orphaned lap files, week-old share images and the 1.x app's lap logs (76 MB on
+  one install) go, the log stays under 1 MB, and a file that can't be read is moved aside instead of being retried
+  every 2 seconds.
+- **Lap ids are never reused**, so a share link can't end up showing a different lap after pruning.
 - **Easier to find the ghost**: a cyan marker above it, drawn from both sides, and where it is on the dash map.
 - **More on the dash**: a track map with every car and the ghost, race flags (bar along the top), pit limiter, tyre
   compound, damage, and fuel left at the flag in races.

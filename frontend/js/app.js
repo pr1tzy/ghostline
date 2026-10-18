@@ -169,7 +169,7 @@ route();
 /* ---------- shared bits ---------- */
 const stat = (k, v) => `<div class="stat"><div class="eyebrow">${k}</div><div class="v" data-count="${esc(v)}">${esc(v)}</div></div>`;
 function rowHTML(l, i, isBest, go) {
-  const tag = !l.valid ? `<span class="tag dim" title="${esc(l.setup?.cut || 'Invalid lap')}">Cut</span>` : isBest ? '<span class="tag">Best</span>' : `<span class="tag dim">${esc(l.source_label)}</span>`;
+  const tag = !l.valid ? `<span class="tag dim" title="${esc(l.setup?.cut || 'Invalid lap')}">${(l.setup?.cut || '').startsWith('recording') ? 'Bad data' : 'Cut'}</span>` : isBest ? '<span class="tag">Best</span>' : `<span class="tag dim">${esc(l.source_label)}</span>`;
   return `<li class="row" data-go="${go}" data-id="${l.id}" data-hover data-label="Compare" data-reveal>
     <span class="mono">${String(i + 1).padStart(2, '0')}</span>
     <span class="time">${fmt(l.lap_ms)}</span>

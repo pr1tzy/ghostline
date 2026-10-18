@@ -32,8 +32,42 @@ if "--selftest" in ARGS:   # a spare port and a throwaway data folder before any
 from backend import settings  # noqa: E402
 
 settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+
+class Log:
+    """The installed app's log file, kept under 1 MB: when it's full it becomes ghostline.old.log (replacing the one
+    before) and a new one starts. The app runs for weeks in the tray, so a plain append-only file would only grow."""
+    LIMIT = 1_000_000
+
+    def __init__(self, path):
+        self.path, self.lock = path, threading.Lock()
+        self.f = open(path, "a", buffering=1, encoding="utf-8")
+
+    def write(self, text):
+        with self.lock:
+            n = self.f.write(text)
+            if self.f.tell() > self.LIMIT:
+                self.f.close()
+                try:
+                    os.replace(self.path, self.path.with_name(self.path.stem + ".old.log"))
+                except OSError:
+                    pass
+                self.f = open(self.path, "a", buffering=1, encoding="utf-8")
+            return n
+
+    def flush(self):
+        with self.lock:
+            self.f.flush()
+
+    def isatty(self):
+        return False
+
+    def __getattr__(self, name):   # anything else a logger asks of a stream
+        return getattr(self.f, name)
+
+
 if sys.stdout is None:   # no console (installed app, pythonw): log to a file instead
-    sys.stdout = sys.stderr = open(settings.DATA_DIR / "ghostline.log", "a", buffering=1, encoding="utf-8")
+    sys.stdout = sys.stderr = Log(settings.DATA_DIR / "ghostline.log")
 
 import uvicorn  # noqa: E402
 

@@ -133,6 +133,9 @@ def _compare(a, b, ideal=False, version=0):
     return analysis.compare(a, b, ideal_of=a if ideal else None)
 
 
+store.on_delete.append(_compare.cache_clear)   # laps are also deleted in the background (pruning, checks)
+
+
 def _resolve(a, b, ideal):
     if not store.get_lap(a) or (b is not None and not store.get_lap(b)):
         raise HTTPException(404, "lap not found")

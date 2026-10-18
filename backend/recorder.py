@@ -4,6 +4,7 @@ Only opens AC's existing mappings (never creates them), so it can't interfere wi
 """
 import ctypes
 import json
+import queue
 import threading
 import time
 from ctypes import wintypes
@@ -149,6 +150,8 @@ class Standings:
                 h.append((prog, now))
             del h[:-2400]                        # ~10 minutes of history per car
             c["prog"] = prog
+        for name in [n for n, h in self.hist.items() if not h or now - h[-1][1] > 600]:
+            del self.hist[name]                  # drivers who left: a server sees hundreds over a day
         self.data = raw
         return raw
 
@@ -199,6 +202,9 @@ class Recorder(threading.Thread):
         self.standings = Standings()
         self.pb = self.ghost = None
         self.corners = []
+        self.current = None              # (car, track) being driven
+        self.saves = queue.Queue()       # finished laps, saved by their own thread (see _saver)
+        self.ref_lock = threading.Lock()
 
     def set_enabled(self, on):
         self.enabled = bool(on)
@@ -210,7 +216,18 @@ class Recorder(threading.Thread):
         except OSError:
             return Page(name, small)
 
+    def _saver(self):
+        """Saving a lap (file, checks, new reference for the in-game app) takes up to 2 s. Done in the sampling loop,
+        that was the first 0.6-1.9 s of the next lap missing (44 of 257 laps up to 2.2); here it runs alongside."""
+        while True:
+            job = self.saves.get()
+            try:
+                self._save(*job)
+            except Exception as e:
+                print("lap save failed", e)
+
     def run(self):
+        threading.Thread(target=self._saver, daemon=True, name="lap-saver").start()
         while True:
             if not self.enabled:
                 self.state.update(connected=False, recording=False)
@@ -243,13 +260,17 @@ class Recorder(threading.Thread):
         return st.carModel, track, driver
 
     def _refresh_ref(self, car, track):
-        pb = store.q("SELECT id FROM laps WHERE source='player' AND valid=1 AND car=? AND track=? ORDER BY lap_ms LIMIT 1", (car, track))
-        gh = store.q("SELECT id FROM laps WHERE source IN ('online','ai') AND valid=1 AND car=? AND track=? ORDER BY lap_ms LIMIT 1", (car, track))
-        self.pb = analysis.prep(pb[0]["id"]) if pb else None
-        self.ghost = analysis.prep(gh[0]["id"]) if gh else None
-        base = self.ghost or self.pb
-        self.corners = analysis.find_corners(base) if base else []
-        coach.publish(car, track)   # best lap for this car + track, to the in-game app
+        with self.ref_lock:   # the sampling loop (new session) and the saver (new lap) both call this
+            if (car, track) != self.current:
+                return   # a lap from the session before, saved after the next one started
+            pb = store.q("SELECT id FROM laps WHERE source='player' AND valid=1 AND car=? AND track=? ORDER BY lap_ms LIMIT 1", (car, track))
+            gh = store.q("SELECT id FROM laps WHERE source IN ('online','ai') AND valid=1 AND car=? AND track=? ORDER BY lap_ms LIMIT 1", (car, track))
+            pb = analysis.prep(pb[0]["id"]) if pb else None
+            gh = analysis.prep(gh[0]["id"]) if gh else None
+            base = gh or pb
+            corners = analysis.find_corners(base) if base else []
+            self.pb, self.ghost, self.corners = pb, gh, corners
+            coach.publish(car, track)   # best lap for this car + track, to the in-game app
 
     def _loop(self, phys, gfx, stat):
         rows, recording = [], False
@@ -270,6 +291,7 @@ class Recorder(threading.Thread):
                 continue
             if car is None or last_laps is None or g.completedLaps < last_laps:
                 car, track, driver = self._info(stat.read())
+                self.current = (car, track)
                 carfeed.feed.player_car = car   # full detail only for cars that can be your ghost
                 self._refresh_ref(car, track)
                 rows, recording, sess_best_sectors, fuel_hist = [], False, {}, []
@@ -283,7 +305,7 @@ class Recorder(threading.Thread):
                         sess_best_sectors[k] = min(sess_best_sectors.get(k, 10 ** 9), rest)
                     last_sectors = lap["sectors"]
                 if recording and len(rows) > 200:
-                    self._save(rows, car, track, driver, g.iLastTime)
+                    self.saves.put((rows, car, track, driver, g.iLastTime))   # rows is never touched again here
                     if lap.get("fuel0") is not None and lap["fuel0"] > p.fuel:
                         fuel_hist = (fuel_hist + [lap["fuel0"] - p.fuel])[-5:]
                 rows, recording = [], True
@@ -373,11 +395,13 @@ class Recorder(threading.Thread):
         cut = bool(len(off))
         note = json.dumps({"cut": analysis.cut_reason(track, a[:, 8], a[:, 9], float(a[off[0], 1]))}) if cut else ""
         cols = ("t", "pos", "speed", "throttle", "brake", "steer", "gear", "rpm", "x", "z")
+        arrays = {c: a[:, i] for i, c in enumerate(cols)}
+        if not cut and (why := analysis.lap_problems(track, arrays, lap_ms)):
+            cut, note = True, json.dumps({"cut": "recording problem: " + why})   # kept, but never a best or a reference
         lap_id = store.add_lap(
             {"source": "player", "driver": driver, "car": car, "track": track, "lap_ms": lap_ms, "valid": not cut,
-             "has_inputs": 1, "origin": f"player-{time.time():.3f}", "note": note},
-            {c: a[:, i] for i, c in enumerate(cols)})
-        store.clear_samples()   # after the insert, so a new lap never reuses a sample's id
+             "has_inputs": 1, "origin": f"player-{time.time():.3f}", "note": note}, arrays)
+        store.clear_samples()
         self._refresh_ref(car, track)
         self.state["recent"] = ([{"id": lap_id, "lap_ms": lap_ms, "valid": not cut}] + self.state["recent"])[:6]
 

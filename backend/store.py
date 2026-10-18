@@ -48,17 +48,19 @@ def kv_set(k, v):
 
 
 def add_lap(meta, arrays):
-    """Insert a lap. Returns its id, or None if this origin was already ingested."""
+    """Insert a lap. Returns its id, or None if this origin was already ingested.
+    Ids are never reused: SQLite would hand a deleted lap's id to the next one (other drivers' laps are pruned all the
+    time), and a share link or a cached comparison would then show a different lap."""
     with _lock:
         if meta.get("origin") and q("SELECT 1 FROM laps WHERE origin=?", (meta["origin"],)):
             return None
-        cur = _db.execute(
-            "INSERT INTO laps(source,driver,car,track,lap_ms,valid,has_inputs,created,origin,note) VALUES(?,?,?,?,?,?,?,?,?,?)",
-            (meta["source"], meta.get("driver", ""), meta["car"], meta["track"], int(meta["lap_ms"]),
+        lap_id = max(int(kv_get("next_id", 0)), (q("SELECT MAX(id) m FROM laps")[0]["m"] or 0) + 1)
+        _db.execute(
+            "INSERT INTO laps(id,source,driver,car,track,lap_ms,valid,has_inputs,created,origin,note) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (lap_id, meta["source"], meta.get("driver", ""), meta["car"], meta["track"], int(meta["lap_ms"]),
              int(meta.get("valid", 1)), int(meta.get("has_inputs", 0)), meta.get("created", time.time()),
              meta.get("origin"), meta.get("note", "")))
-        _db.commit()
-        lap_id = cur.lastrowid
+        kv_set("next_id", lap_id + 1)   # commits both
     np.savez_compressed(LAPDIR / f"{lap_id}.npz", **_pack(arrays))
     return lap_id
 
@@ -140,10 +142,46 @@ def list_laps(car=None, track=None, source=None):
     return q(sql + " ORDER BY created DESC", args)
 
 
+on_delete = []   # cache_clear of every cache keyed by lap id (analysis.prep, the app's comparisons)
+
+
 def delete_lap(lap_id):
     q("DELETE FROM laps WHERE id=?", (int(lap_id),))
     (LAPDIR / f"{lap_id}.npz").unlink(missing_ok=True)
     _load.cache_clear()
+    for fn in on_delete:
+        fn()
+
+
+OG_DAYS, OG_MAX = 7, 300   # share images: rebuilt on demand, so old ones go
+
+
+def tidy():
+    """Every start: what's on disk matches the database, and nothing grows without limit. Lap files without a lap
+    (and half-written ones), laps without a file, and share images for deleted laps or older than a week."""
+    files = list(LAPDIR.glob("*.npz"))   # before reading the ids: a lap's row is written before its file
+    ids = {r["id"] for r in q("SELECT id FROM laps")}
+    gone = 0
+    for f in files:
+        stem = f.name[:-4]
+        if not stem.isdigit() or int(stem) not in ids:
+            f.unlink(missing_ok=True)
+            gone += 1
+    have = {f.name[:-4] for f in LAPDIR.glob("*.npz")}
+    for r in q("SELECT id FROM laps WHERE created < ?", (time.time() - 60,)):   # not one being saved right now
+        if str(r["id"]) not in have:
+            delete_lap(r["id"])
+            gone += 1
+    og = DATA / "og"
+    if og.exists():
+        imgs = sorted(og.glob("*.png"), key=lambda f: f.stat().st_mtime, reverse=True)
+        for k, f in enumerate(imgs):
+            pair = f.name.split("_")[:2]
+            dead = any(not x.lstrip("i").isdigit() or int(x.lstrip("i")) not in ids for x in pair)
+            if dead or k >= OG_MAX or time.time() - f.stat().st_mtime > OG_DAYS * 86400:
+                f.unlink(missing_ok=True)
+    if gone:
+        print("tidy: removed", gone, "lap files / rows that didn't match")
 
 
 def sample_count():

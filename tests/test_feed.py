@@ -19,6 +19,7 @@ sim = {"t": 0.0}
 CS = types.SimpleNamespace(NormalizedSplinePosition=1, WorldPosition=2, SpeedKMH=3, Gear=4, LapCount=5, LastLap=6, BestLap=7)
 speed = [70 + i * 0.4 for i in range(N)]                                 # m/s: laps of 74-83 s
 model = [MINE if i % 2 == 0 else OTHER for i in range(N)]                # half the grid is a different class
+GAME_CLOCK = [1.0]   # how fast the game's own lap times run against the samples' clock
 
 
 def car_state(i, what):
@@ -35,7 +36,9 @@ def car_state(i, what):
         return 6
     if what == CS.LapCount:
         return int(d // L)
-    return int(L / speed[i] * 1000) if what in (CS.LastLap, CS.BestLap) else 0
+    if what == CS.LastLap:   # the game's time for the last lap: a ms apart from one lap to the next, like real ones
+        return int(L / speed[i] * 1000 * GAME_CLOCK[0]) + int(d // L) % 2
+    return int(L / speed[i] * 1000) if what == CS.BestLap else 0
 
 
 ac = types.ModuleType("ac")
@@ -111,6 +114,15 @@ for l in mine:
     assert abs(l["lap_ms"] - L / speed[i] * 1000) < 60, (l, L / speed[i] * 1000)   # timing within 60 ms
 drivers = {l["driver"] for l in mine}
 assert len(drivers) >= 3, drivers   # pruning keeps the 3 fastest drivers
+
+# our lap time and the game's disagree (2.2's in-game clock ran at double speed): those laps aren't kept
+saved = feed.saved
+GAME_CLOCK[0] = 0.5
+run(170, with_feed=True)
+assert feed.saved == saved, (feed.saved, saved)
+GAME_CLOCK[0] = 1.0
+run(170, with_feed=True)
+assert feed.saved > saved, "laps that agree are kept again"
 
 snap = feed.snap   # snapshot() checks freshness against the wall clock; this test runs on simulated time
 assert snap and len(snap["cars"]) == N and snap["track"] == "monza", snap and len(snap["cars"])
