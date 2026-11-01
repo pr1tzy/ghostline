@@ -45,7 +45,7 @@ jobs:
       # ---- signing the app (before it goes into the installer) ----
       - id: app_unsigned
         if: env.SIGNING == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app-unsigned
           path: dist/Ghostline
@@ -67,7 +67,7 @@ jobs:
       # ---- signing the installer ----
       - id: setup_unsigned
         if: env.SIGNING == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: setup-unsigned
           path: dist/release/GhostlineSetup.exe
@@ -106,7 +106,7 @@ jobs:
 
       - name: Keep the build (manual runs)
         if: github.event_name != 'release'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ghostline-build
           path: dist/release
