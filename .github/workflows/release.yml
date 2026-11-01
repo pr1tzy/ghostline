@@ -91,7 +91,7 @@ jobs:
           cat dist/release/SHA256SUMS.txt
 
       - name: Build provenance (proves the files were built from this repository)
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             dist/release/GhostlineSetup.exe
