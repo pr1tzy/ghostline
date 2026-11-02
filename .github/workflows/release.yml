@@ -113,7 +113,7 @@ jobs:
 
       - name: VirusTotal scan link in the release notes
         if: github.event_name == 'release' && env.VIRUSTOTAL == 'true'
-        uses: crazy-max/ghaction-virustotal@d34968c958ae283fe976efed637081b9f9dcf74f  # v4.2.0
+        uses: crazy-max/ghaction-virustotal@936d8c5c00afe97d3d9a1af26d017cfdf26800a2  # v5.0.0
         with:
           vt_api_key: ${{ secrets.VT_API_KEY }}
           files: GhostlineSetup.exe   # on a release this matches the release's file names, not local paths
