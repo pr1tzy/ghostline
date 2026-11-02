@@ -50,7 +50,7 @@ jobs:
           name: app-unsigned
           path: dist/Ghostline
       - if: env.SIGNING == 'true'
-        uses: signpath/github-action-submit-signing-request@v1
+        uses: signpath/github-action-submit-signing-request@ced31329c0317e779dad2eec2a7c3bb46ea1343e  # v1.3
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
@@ -72,7 +72,7 @@ jobs:
           name: setup-unsigned
           path: dist/release/GhostlineSetup.exe
       - if: env.SIGNING == 'true'
-        uses: signpath/github-action-submit-signing-request@v1
+        uses: signpath/github-action-submit-signing-request@ced31329c0317e779dad2eec2a7c3bb46ea1343e  # v1.3
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
@@ -113,7 +113,7 @@ jobs:
 
       - name: VirusTotal scan link in the release notes
         if: github.event_name == 'release' && env.VIRUSTOTAL == 'true'
-        uses: crazy-max/ghaction-virustotal@v4
+        uses: crazy-max/ghaction-virustotal@d34968c958ae283fe976efed637081b9f9dcf74f  # v4.2.0
         with:
           vt_api_key: ${{ secrets.VT_API_KEY }}
           files: GhostlineSetup.exe   # on a release this matches the release's file names, not local paths

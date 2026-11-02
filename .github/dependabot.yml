@@ -5,7 +5,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
-  - package-ecosystem: github-actions
+  - package-ecosystem: github-actions   # also bumps the third-party actions pinned to commit SHAs
     directory: "/"
     schedule:
-      interval: monthly
+      interval: weekly

@@ -204,7 +204,8 @@ can use a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/c
 5. Restart Ghostline. It starts the tunnel with the site and stops it on exit.
 
 Suggested Cloudflare settings: SSL/TLS **Full (strict)**, **Always Use HTTPS**, **Minimum TLS 1.2**, **HSTS** on,
-**Bot Fight Mode** on. No cache rules are needed.
+**Bot Fight Mode** on with **JavaScript Detections** off (it injects an inline script, which the site's CSP blocks).
+No cache rules are needed.
 
 `config/site.json` settings: `public_host` (defaults to the tunnel's hostname), `credit_name`, `credit_url`,
 `port`, and for an always-on site `pages_project` and `live_host` (below). Environment variables `GHOSTLINE_PORT`,
