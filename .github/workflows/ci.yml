@@ -39,5 +39,7 @@ jobs:
         run: python tests/test_coach.py
       - name: In-game dash (LuaJIT)
         run: python tests/test_hud.py
+      - name: Always-on site copy (built from the samples, checked against the API in Node)
+        run: python tests/test_publish.py
       - name: Dependency audit
         run: python -m pip_audit -r requirements.txt

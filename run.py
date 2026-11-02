@@ -7,6 +7,7 @@
   --tray / --no-tray   show the tray icon (default: on for the installed app, off for start.bat)
   --set k=v        change an app option (launch_with_game, check_updates) and exit; used by the installer
   --uninstall      remove the in-game apps from Assetto Corsa and exit; used by the uninstaller
+  --publish        build the online copy of the site and upload it to Cloudflare Pages now, then exit
   --selftest       start on a spare port, check the site answers, exit 0 or 1; used by the release build
 """
 import atexit
@@ -71,7 +72,7 @@ if sys.stdout is None:   # no console (installed app, pythonw): log to a file in
 
 import uvicorn  # noqa: E402
 
-from backend import __version__, carfeed, ingest, runtime  # noqa: E402
+from backend import __version__, carfeed, ingest, publish, runtime  # noqa: E402
 from backend.app import PORT, app  # noqa: E402
 from backend.recorder import recorder  # noqa: E402
 
@@ -113,6 +114,11 @@ def one_shot_commands():
     if "--uninstall" in ARGS:
         print(ingest.uninstall_app())
         sys.exit(0)
+    if "--publish" in ARGS:
+        if not publish.configured():
+            print("Publishing isn't set up: see docs/advanced.md, Always online")
+            sys.exit(1)
+        sys.exit(0 if publish.Publisher(lambda: False, lambda: False).publish("by hand", force=True) else 1)
 
 
 def selftest(server):
@@ -170,7 +176,12 @@ def main():
         runtime.start_update_checks()
         tunnel = start_tunnel()
         if settings.TUNNEL:
-            print("Public site:", tunnel)
+            print("Live stream:" if publish.configured() else "Public site:", tunnel)
+    publisher = None
+    if "--selftest" not in ARGS and publish.configured():
+        publisher = publish.Publisher(ingest.ac_running, lambda: bool(recorder.state.get("connected")))
+        publisher.start()
+        print(f"Online site: https://{settings.PUBLIC_HOST} (updated after each session)")
 
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=PORT, log_level="warning", proxy_headers=False,
                                            server_header=False))
@@ -210,6 +221,8 @@ def main():
         time.sleep(0.5)
     else:
         server.run()
+    if publisher:
+        publisher.finish()         # the online copy gets this session's laps before Ghostline closes
 
 
 if __name__ == "__main__":

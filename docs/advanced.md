@@ -207,7 +207,45 @@ Suggested Cloudflare settings: SSL/TLS **Full (strict)**, **Always Use HTTPS**, 
 **Bot Fight Mode** on. No cache rules are needed.
 
 `config/site.json` settings: `public_host` (defaults to the tunnel's hostname), `credit_name`, `credit_url`,
-`port`. Environment variables `GHOSTLINE_PORT` and `GHOSTLINE_HOST` override them.
+`port`, and for an always-on site `pages_project` and `live_host` (below). Environment variables `GHOSTLINE_PORT`,
+`GHOSTLINE_HOST` and `GHOSTLINE_LIVE_HOST` override them.
+
+## Always online
+
+With the tunnel alone, the site is only up while your PC is. Ghostline can also keep a copy on
+[Cloudflare Pages](https://pages.cloudflare.com/) (free): plain files, so it stays up with your PC off. After each
+session, once the game is closed, Ghostline builds the copy (a minute or so) and uploads what changed. The Live page
+still comes from your PC, through the tunnel on a second hostname, whenever Ghostline is running; otherwise it says
+you're not driving.
+
+What's in the copy: every page and number the public site shows (other drivers as initials), each lap against its
+three closest references and your ideal lap, and the best lap of each car and track against every ghost. Ghostline
+on your PC still compares any two laps.
+
+You need [Node.js](https://nodejs.org) (publishing uses Cloudflare's own upload tool, `wrangler`, pinned in
+`backend/publish.py`) and the tunnel from the section above.
+
+1. In the Cloudflare dashboard, create an API token with **Account > Cloudflare Pages > Edit** (Profile > API
+   Tokens > Create Token > Custom token), and note your **Account ID** (on your domain's overview page).
+2. Create `config/cloudflare.json` (not committed; installed: `%LOCALAPPDATA%\Ghostline\config`):
+   ```json
+   {"account_id": "your account id", "api_token": "your token"}
+   ```
+3. In `config/site.json`, set the site's hostname, a Pages project name and a second hostname for Live:
+   ```json
+   {"public_host": "ghostline.example.com", "pages_project": "ghostline", "live_host": "ghostline-live.example.com"}
+   ```
+   Keep `live_host` one level under your domain: Cloudflare's free certificate doesn't cover deeper names.
+4. Point the tunnel at the Live hostname: `cloudflared tunnel route dns ghostline ghostline-live.example.com`, and in
+   `cloudflared/ghostline.yml` change both `hostname` and `httpHostHeader` to it. On that hostname Ghostline only
+   serves the Live stream; anything else is sent on to the site.
+5. Publish once: `Ghostline.exe --publish` (from source: `python run.py --publish`). This creates the Pages project.
+6. In Cloudflare: delete the DNS record that pointed `ghostline.example.com` at the tunnel, then add it as a custom
+   domain to the Pages project (Workers & Pages > ghostline > Custom domains).
+7. Restart Ghostline. From now on it publishes by itself; the References page shows when it last did.
+
+Cloudflare Pages allows 20,000 files per site; a copy with 400 laps is about 2,600 files and 110 MB, and later
+uploads only send what changed.
 
 ## Security model
 

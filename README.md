@@ -18,7 +18,7 @@ always quicker. Telemetry tools record your own laps; nobody hands you theirs. B
 every car on the server, so a small in-game app could log the fastest drivers as they drove, keep their laps as
 ghosts and line them up against mine, metre by metre.
 
-**What it has become.** Two weeks later:
+**What it has become.** A month later:
 
 | Release | What it added |
 |---|---|
@@ -26,7 +26,8 @@ ghosts and line them up against mine, metre by metre.
 | **2.0** (Oct 8) | The in-game side rebuilt around shared memory: about 0.02 ms a frame, 0.001 ms with Custom Shaders Patch. |
 | **2.1** (Oct 8) | A real Windows app: an installer with no admin prompt, a tray icon, starts with the game and closes after it. Built, self-tested and checksummed by GitHub from this source. |
 | **2.2** (Oct 16) | Coaching inside the game: brake boards with a countdown timed from your speed, and a see-through 3D ghost. |
-| **2.3** | One dash that replaces every other app, a racing line like the F1 games' that follows your speed, and every lap checked for a bad recording before it can become a ghost. |
+| **2.3** (Oct 18) | One dash that replaces every other app, a racing line like the F1 games' that follows your speed, and every lap checked for a bad recording before it can become a ghost. |
+| **2.4** | The public site always online: plain files on Cloudflare Pages, rebuilt after each session from the same code, with the Live page streaming from the PC whenever it runs. |
 
 **What's next.** Corner notes in the game while you drive, ghost files to swap laps with friends, real pedal data
 for every ghost, a signed installer and an opt-in shared ghost library: see [ROADMAP.md](ROADMAP.md).
@@ -65,7 +66,7 @@ you drive. They disappear once your own laps start coming in.
 
 ### Built to be used
 
-- **Tested on every change.** Seven test suites run on every push, including the in-game apps in LuaJIT against a
+- **Tested on every change.** Eight test suites run on every push, including the in-game apps in LuaJIT against a
   fake game, frame by frame, and the recorder against a fake game running ten times faster than real time.
 - **Light.** In tests the in-game logger costs about 0.001 ms a frame and coaching about 0.002 ms; the Ghostline
   window in the game shows the real numbers on your PC.
@@ -162,7 +163,8 @@ or the person installing or operating it. Ghostline only goes online when you as
 - **Update check**, if you tick it in the installer (or on the References page): once a day it asks GitHub for the
   newest release number ([GitHub's privacy statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement)).
 - **Real-world F1 laps**, when you import one: downloaded from [OpenF1](https://openf1.org).
-- **Publishing your site**, only if you set up a Cloudflare Tunnel yourself (see docs/advanced.md).
+- **Publishing your site**, only if you set it up yourself: a Cloudflare Tunnel, and optionally a copy on
+  Cloudflare Pages that's uploaded after each session (see docs/advanced.md).
 
 Everything Ghostline records stays on your PC. There's no account, no analytics and no telemetry.
 

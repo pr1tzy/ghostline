@@ -1,7 +1,53 @@
 /* Ghostline — single-page app */
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+// ---- online copy: start (tests/test_publish.py runs this part in Node)
+// the always-on online copy (backend/publish.py): the same pages, reading plain JSON files instead of the API
+const STATIC = document.querySelector('meta[name="ghostline-static"]');
+const LIVE_URL = STATIC ? (STATIC.content ? `https://${STATIC.content}/api/live` : '') : '/api/live';
+const MISSING = 'not in the online copy';
+const getJSON = async u => {
+  const r = await fetch(u);
+  if (!r.ok) throw new Error(r.status === 404 ? MISSING : `HTTP ${r.status}`);
+  return r.json();
+};
+const lapFiles = {};
+let idealOf = null, sessionOf = null;
+async function unshare(o) {   // arrays many comparisons share are stored once per lap: {"$": [lap, key, n]}
+  if (!o || typeof o !== 'object') return o;
+  if (Array.isArray(o)) { if (o.length && typeof o[0] === 'object') await Promise.all(o.map(unshare)); return o; }
+  await Promise.all(Object.entries(o).map(async ([k, v]) => {
+    if (v && Array.isArray(v.$)) {
+      const [id, key, n] = v.$;
+      o[k] = (await (lapFiles[id] ??= getJSON(`/data/lap/${id}.json`)))[key].slice(0, n);
+    } else await unshare(v);
+  }));
+  return o;
+}
+async function staticApi(p, o) {
+  if (o?.method && o.method !== 'GET') throw new Error('This is the read-only online copy');
+  const [path, qs] = p.split('?'), q = new URLSearchParams(qs || ''), id = path.match(/\/(\d+)/)?.[1];
+  let u = null;
+  if (path === '/state' || path === '/content' || path === '/laps') u = `/data${path}.json`;
+  else if (/^\/laps\/\d+\/map$/.test(path)) u = `/data/map/${id}.json`;
+  else if (/^\/references\/\d+$/.test(path)) u = `/data/refs/${id}.json`;
+  else if (/^\/session\/\d+$/.test(path)) u = `/data/session/${(await (sessionOf ??= getJSON('/data/sessions.json')))[id] ?? id}.json`;
+  else if (path === '/stats') u = `/data/stats/${encodeURIComponent(q.get('car'))}__${encodeURIComponent(q.get('track'))}.json`;
+  else if (path === '/compare') {
+    let a = +q.get('a'), b = +q.get('b');
+    if (!b) {   // no reference named: the closest one (for the ideal lap, the fastest lap that isn't yours), as the API does
+      const refs = await staticApi(`/references/${a}`);
+      b = ((q.get('ideal') && refs.find(r => r.source !== 'player')) || refs[0])?.id;
+    }
+    if (q.get('ideal')) a = (await (idealOf ??= getJSON('/data/ideal.json')))[a] ?? a;   // one ideal lap per car + track
+    u = `/data/compare/${q.get('ideal') ? 'i' : ''}${a}-${b}.json`;
+  }
+  if (!u) throw new Error(MISSING);
+  return unshare(await getJSON(u));
+}
+// ---- online copy: end
 const api = async (p, o) => {
+  if (STATIC) return staticApi(p, o);
   const r = await fetch('/api' + p, o);
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
@@ -93,9 +139,8 @@ const getMap = id => (maps[id] ??= api(`/laps/${id}/map`).catch(() => null));
 
 /* ---------- live stream (status pill, toasts, live page) ---------- */
 const bus = new Set();
-let live = {}, lastLap;
-const es = new EventSource('/api/live');
-es.onmessage = e => {
+let live = STATIC ? { offline: true } : {}, lastLap;
+function onLive(e) {
   live = JSON.parse(e.data);
   const r = $('#rec');
   r.classList.toggle('on', !!live.recording);
@@ -107,7 +152,19 @@ es.onmessage = e => {
   if (lastLap !== undefined && top && top !== lastLap) toast(`Lap saved ${fmt(live.recent[0].lap_ms)}${live.recent[0].valid ? '' : ' (cut)'}`);
   lastLap = top ?? null;
   bus.forEach(f => f(live));
-};
+}
+function listen() {   // online copy: the stream comes from Ghostline on my PC, only while it runs; look again now and then
+  if (!LIVE_URL) return;
+  const es = new EventSource(LIVE_URL);
+  let got = false;
+  es.onmessage = e => { got = true; onLive(e); };
+  if (STATIC) es.onerror = () => {   // PC off: ask again in a minute; a dropped stream: straight back
+    es.close();
+    if (got) { live = { offline: true }; bus.forEach(f => f(live)); }
+    setTimeout(listen, got ? 3000 : 60000);
+  };
+}
+listen();
 
 /* ---------- router + page transitions ---------- */
 const wipe = $('.wipe'), wtitle = $('.wipe-title');
@@ -149,7 +206,13 @@ async function route() {
   const view = $('#view'); view.innerHTML = '';
   lenis.scrollTo(0, { immediate: true });
   try { cleanup = await pages[page](view, args); }
-  catch (e) { view.innerHTML = `<section class="empty"><div class="eyebrow">Something broke</div><h1 class="big split">Error</h1><p>${esc(e.message)}</p></section>`; }
+  catch (e) {
+    view.innerHTML = e.message === MISSING
+      ? `<section class="empty"><div class="eyebrow">Online copy</div><h1 class="mega split">Not<br><em>online</em></h1>
+        <p>This copy has every lap against its closest references, and new laps go up after each session. Ghostline on your own PC compares any two laps.</p>
+        <div><a class="btn solid" href="/laps" data-hover><span>All laps</span></a> &nbsp; <a class="btn" href="/get" data-hover><span>Get Ghostline</span></a></div></section>`
+      : `<section class="empty"><div class="eyebrow">Something broke</div><h1 class="big split">Error</h1><p>${esc(e.message)}</p></section>`;
+  }
   if (SAMPLES && page !== '404') view.insertAdjacentHTML('afterbegin', '<div class="sample-note mono">Sample laps (Monza and Spa) so you can look around. They disappear once your own laps start coming in.</div>');
   bind(view);
   first = false;
@@ -291,7 +354,7 @@ async function home(view) {
       <div class="step" data-reveal><div class="no">04</div><div><h3 class="wide">Debrief</h3><p>Laps are lined up metre by metre. Braking points, apex speed and throttle pick-up turn the gap into three things to fix.</p></div>${vizDebrief(c)}</div>
       <div class="step" data-reveal><div class="no">05</div><div><h3 class="wide">Any track</h3><p>Car, track and layout are picked up from the game. Names, lengths and corner names come from the official Assetto Corsa content, so a new combo needs no setup.</p></div>${vizTracks(ct)}</div>
     </div>
-    <p class="mono" style="margin-top:40px">Two weeks from one question to all of this: <a href="/story" data-hover>the story</a>, and what's coming next.</p>
+    <p class="mono" style="margin-top:40px">A month from one question to all of this: <a href="/story" data-hover>the story</a>, and what's coming next.</p>
   </section>
   <section class="outro"><a href="/laps" class="mega outro-link" data-hover data-label="Open">Every<br><em>lap</em> &rarr;</a></section>`;
   view.addEventListener('click', e => { const r = e.target.closest('[data-go]'); if (r) nav.to = r.dataset.go; });
@@ -657,7 +720,7 @@ async function sessionPage(view, [id]) {
 
 /* ---------- compare extras: share + setup notes ---------- */
 async function shareLink(aTok, b) {
-  const url = `${location.origin}/s/${aTok}/${b}`;
+  const url = `${location.origin}/${STATIC ? 'compare' : 's'}/${aTok}/${b}`;
   try {
     if (navigator.share && matchMedia('(pointer: coarse)').matches) await navigator.share({ title: 'Ghostline', url });
     else { await navigator.clipboard.writeText(url); toast('Link copied'); }
@@ -750,7 +813,7 @@ async function livePage(view) {
   const upd = s => {
     // top status strip
     const tags = [
-      [s.connected ? s.session || 'Session' : (s.enabled ? 'Waiting for AC' : 'Recorder off'), ''],
+      [s.connected ? s.session || 'Session' : s.offline ? 'Not driving right now' : (s.enabled ? 'Waiting for AC' : 'Recorder off'), ''],
       s.position ? [`P${s.position}${s.num_cars ? ' / ' + s.num_cars : ''}`, 'hi'] : null,
       s.laps_total ? [`Lap ${Math.min(s.laps_done + 1, s.laps_total)} / ${s.laps_total}`, ''] : s.connected ? [`Lap ${s.laps_done + 1}`, ''] : null,
       s.time_left ? [`${fmtLeft(s.time_left)} left`, ''] : null,
@@ -807,7 +870,7 @@ async function livePage(view) {
     const sk = JSON.stringify(st?.map(c => [c.pos, c.name, c.gap, c.last, c.best, c.pit]));
     if (sk !== standKey) {
       standKey = sk;
-      el('stitle').textContent = st ? (s.session === 'Race' ? 'Race order · gap to me' : 'Timing · best laps') : 'Standings need the RaceLogger in-game app';
+      el('stitle').textContent = st ? (s.session === 'Race' ? 'Race order · gap to me' : 'Timing · best laps') : s.offline ? 'Standings' : 'Standings need the RaceLogger in-game app';
       el('stand').innerHTML = st ? `<tr><th>P</th><th>Driver</th><th>Gap</th><th>Last</th><th>Best</th></tr>` + st.map(c => `<tr class="${c.me ? 'me' : ''}">
         <td class="num">${c.pos}</td><td>${esc(c.me ? 'You' : c.name)}${c.pit ? ' <span class="mono">pit</span>' : ''}</td>
         <td class="num ${c.gap > 0 ? 'gain' : c.gap < 0 ? 'loss' : ''}">${c.me ? '—' : c.gap == null ? '' : sgn(c.gap, s.session === 'Race' ? 1 : 3)}</td>
@@ -899,13 +962,14 @@ async function storyPage(view) {
     ['Oct 8', '2.0', 'Almost free in the game', 'The in-game side rebuilt around shared memory: it copies each car\'s numbers and nothing else, about 0.02 ms a frame, or 0.001 ms with Custom Shaders Patch.', '2.0.0'],
     ['Oct 8', '2.1', 'A real Windows app', 'An installer with no admin prompt, an icon by the clock, starts with your Assetto Corsa session and closes after it. Every release built by GitHub from the public source, with checksums and a build-provenance record.', '2.1.0'],
     ['Oct 16', '2.2', 'Coaching on the track', 'The best lap for your car moved into the game: brake boards where it braked, a tick-tick-brake countdown timed from your own speed, and a see-through 3D ghost with the gap above it.', '2.2.0'],
-    ['Now', '2.3', 'The only app you need', 'One dash with standings and live gaps, timing, gear and delta, pedals, tyres and a track map. A racing line like the F1 games\', red where you\'d have to brake at the speed you\'re carrying. And every lap checked for a bad recording before it can become anyone\'s ghost.'],
+    ['Oct 18', '2.3', 'The only app you need', 'One dash with standings and live gaps, timing, gear and delta, pedals, tyres and a track map. A racing line like the F1 games\', red where you\'d have to brake at the speed you\'re carrying. And every lap checked for a bad recording before it can become anyone\'s ghost.', '2.3.0'],
+    ['Now', '2.4', 'Always online', 'This site became plain files on Cloudflare Pages, so it stays up with my PC off. After each session Ghostline builds the copy from the same code that serves the site and uploads what changed; the Live page comes straight from my PC whenever I drive.'],
   ];
   const built = [
-    ['Tested on every change', 'Seven test suites run on every push. The in-game apps run in LuaJIT against a fake game, frame by frame, at 60 and 120 fps; the recorder runs against a fake game ten times faster than real time.'],
+    ['Tested on every change', 'Eight test suites run on every push. The in-game apps run in LuaJIT against a fake game, frame by frame, at 60 and 120 fps; the recorder runs against a fake game ten times faster than real time.'],
     ['Light in the game', 'In tests the logger costs about 0.001 ms a frame and coaching about 0.002 ms. The Ghostline window in the game shows the real numbers on your PC.'],
     ['Data you can trust', 'Before a lap is kept it\'s checked: time against speed and distance, holes, line to line, lag jumps, cuts. When the checks get better, stored laps are checked again.'],
-    ['Private by design', 'No account, no cookies, nothing uploaded. Everything stays on your PC; a public copy is read-only and shows other drivers by their initials.'],
+    ['Private by design', 'No account, no cookies, nothing uploaded unless you publish a copy yourself. Everything stays on your PC; a public copy is read-only and shows other drivers by their initials.'],
     ['Small on disk', 'Each lap is stored at the precision it\'s measured with, about 50 KB. Old logs, orphaned files and stale images are cleaned up on every start.'],
     ['Open source', 'MIT licensed. Releases are built, self-tested and checksummed by GitHub Actions, straight from the code you can read.'],
   ];
@@ -920,7 +984,7 @@ async function storyPage(view) {
   <section class="get-hero">
     <div class="eyebrow">Story / <b>from one question to a full app</b></div>
     <h1 class="mega split">Where did<br>the <em>time</em> go?</h1>
-    <p class="lead">Ghostline started as one driver's question in Assetto Corsa. Two weeks later it records every lap, keeps the fastest drivers on your server as ghosts, coaches you on the track and replaces every other app on the screen.</p>
+    <p class="lead">Ghostline started as one driver's question in Assetto Corsa. A month later it records every lap, keeps the fastest drivers on your server as ghosts, coaches you on the track and replaces every other app on the screen.</p>
     <div class="ctas"><a class="btn solid" href="/get" data-hover><span>Get Ghostline</span></a>${ext(REPO, 'Read the code')}</div>
   </section>
   <section>
@@ -962,6 +1026,9 @@ async function refs(view) {
         <p>AI baseline: run an offline race against 100% AI with the app on and their laps are saved as AI references.</p>
         <p class="admin-only">Or drop CSVs (columns t, pos, speed + optional x, z, throttle, brake, gear, with <code># car= / # track= / # driver=</code> header lines) into:</p><code class="admin-only">${esc(a.inbox)}</code></div>
     </div>
+    ${st.publish ? `<div class="appopts admin-only mono" data-reveal>Online copy (${esc(st.publish.host)}): ${
+      st.publish.state === 'ok' ? `published ${ago(st.publish.at)}` : st.publish.state === 'publishing' ? 'publishing now'
+        : st.publish.state === 'error' ? `last publish failed: ${esc(st.publish.detail)}` : 'goes up after your next session'}</div>` : ''}
     ${st.ghostline ? `<div class="appopts admin-only" data-reveal>
       <div class="eyebrow">Ghostline app / <b>v${esc(st.version)}</b>${st.ghostline.update ? ` · <a href="${esc(st.ghostline.update.url)}" target="_blank" rel="noopener" data-hover>update available: ${esc(st.ghostline.update.version)}</a>` : ''}</div>
       <label><input type="checkbox" data-opt="launch_with_game" ${st.ghostline.options.launch_with_game ? 'checked' : ''}> Start Ghostline when I start a session in Assetto Corsa, and close it a few minutes after the game. Nothing is added to Windows startup.</label>

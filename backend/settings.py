@@ -7,6 +7,10 @@ config/site.json (not committed; copy config/site.example.json):
   credit_name   name shown in the footer ("Built by ...")
   credit_url    where that name links to
   port          local port (default 8765)
+  pages_project Cloudflare Pages project for the always-on copy of the site (backend/publish.py); with it,
+                public_host is served by Cloudflare and this PC only serves the Live stream, on live_host
+  live_host     hostname of the tunnel to this PC for the Live page (default: the tunnel's hostname)
+config/cloudflare.json (not committed): {"account_id": "...", "api_token": "..."} for publishing to Pages.
 cloudflared/ghostline.yml (not committed; example in docs/advanced.md) turns on the Cloudflare
 Tunnel; its first hostname is used as public_host when site.json doesn't set one.
 Environment variables GHOSTLINE_PORT and GHOSTLINE_HOST override both.
@@ -54,6 +58,10 @@ PORT = int(os.environ.get("GHOSTLINE_PORT") or _s.get("port") or 8765)
 PUBLIC_HOST = (os.environ.get("GHOSTLINE_HOST") or _s.get("public_host") or _tunnel_host).strip().lower()
 CREDIT_NAME = str(_s.get("credit_name") or "").strip()
 CREDIT_URL = str(_s.get("credit_url") or "").strip()
+PAGES_PROJECT = str(_s.get("pages_project") or "").strip()
+LIVE_HOST = (os.environ.get("GHOSTLINE_LIVE_HOST") or _s.get("live_host") or
+             (_tunnel_host if PAGES_PROJECT and _tunnel_host.lower() != PUBLIC_HOST else "")).strip().lower()
+CLOUDFLARE_CFG = USER_CONFIG / "cloudflare.json"
 
 
 # ---------- in-game logger settings: config/logger.json (not committed), also editable from the CSP app's window ----------

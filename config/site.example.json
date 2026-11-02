@@ -2,5 +2,7 @@
   "public_host": "",
   "credit_name": "",
   "credit_url": "",
+  "pages_project": "",
+  "live_host": "",
   "port": 8765
 }

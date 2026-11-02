@@ -14,18 +14,19 @@ from functools import lru_cache
 from fastapi import FastAPI, HTTPException, Query, Request
 from html import escape
 
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
+from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response,
+                               StreamingResponse)
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel, Field
 
-from . import __version__, analysis, content, ingest, runtime, settings, share, store
+from . import __version__, analysis, content, ingest, publish, runtime, settings, share, store
 
 for _ext, _type in ((".otf", "font/otf"), (".woff2", "font/woff2"), (".svg", "image/svg+xml"), (".js", "text/javascript")):
     mimetypes.add_type(_type, _ext)
 from .recorder import recorder
 
-PORT, PUBLIC_HOST = settings.PORT, settings.PUBLIC_HOST
+PORT, PUBLIC_HOST, LIVE_HOST = settings.PORT, settings.PUBLIC_HOST, settings.LIVE_HOST
 LOCAL_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
 PROXY_HEADERS = ("cf-connecting-ip", "cf-ray", "x-forwarded-for", "x-forwarded-host", "forwarded", "x-real-ip")
 MAX_PUBLIC_STREAMS = 40
@@ -49,13 +50,21 @@ def is_admin(request: Request):
 @app.middleware("http")
 async def guard(request: Request, call_next):
     host = request.headers.get("host", "")
-    if host not in LOCAL_HOSTS and not (PUBLIC_HOST and host == PUBLIC_HOST):   # blocks DNS rebinding / unknown hostnames
-        return JSONResponse({"detail": "unknown host"}, 421)
-    request.state.admin = is_admin(request)
+    live_only = bool(LIVE_HOST) and host == LIVE_HOST
+    if host not in LOCAL_HOSTS and not (PUBLIC_HOST and host == PUBLIC_HOST) and not live_only:
+        return JSONResponse({"detail": "unknown host"}, 421)   # blocks DNS rebinding / unknown hostnames
+    request.state.admin = is_admin(request) and not live_only
+    if live_only and request.url.path != "/api/live":
+        # the site itself lives on Cloudflare Pages (backend/publish.py); this PC only streams the Live page
+        if PUBLIC_HOST and request.method in ("GET", "HEAD"):
+            return RedirectResponse(f"https://{PUBLIC_HOST}{request.url.path}", 301)
+        return JSONResponse({"detail": "not found"}, 404)
     if not request.state.admin and request.method not in ("GET", "HEAD"):
         return JSONResponse({"detail": "read-only"}, 403)
     resp = await call_next(request)
     resp.headers.update(SEC_HEADERS)
+    if live_only and PUBLIC_HOST:   # the online copy's Live page reads the stream from here
+        resp.headers.update({"Access-Control-Allow-Origin": f"https://{PUBLIC_HOST}", "Vary": "Origin"})
     if not request.state.admin:
         resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         if request.url.path.startswith(("/vendor/", "/img/", "/css/", "/js/", "/fonts/")):
@@ -101,7 +110,8 @@ def state(request: Request):
             "app": ingest.app_status() if admin else None,
             "ghostline": {"mode": runtime.mode, "update": runtime.update, "options": settings.app_options(),
                           "installed": settings.FROZEN} if admin else None,
-            "recorder": recorder.state, "latest_best": groups[0]["best_id"] if groups else None}
+            "recorder": recorder.state, "latest_best": groups[0]["best_id"] if groups else None,
+            "publish": {**publish.STATUS, "host": PUBLIC_HOST} if admin and publish.configured() else None}
 
 
 @app.get("/api/laps")

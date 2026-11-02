@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.4.0
+
+The public site stays up with your PC off.
+
+- **Always online.** Ghostline can keep a copy of the public site on Cloudflare Pages (free): plain files, built
+  after each session from the same code that serves the site, so every page and number matches. It runs once the
+  game is closed and again on the way out, and uploads only what changed. Each lap is compared with its three
+  closest references and your ideal lap, and each car and track's best lap with every ghost; Ghostline on your PC
+  still compares any two laps. Set up in docs/advanced.md (Always online); `Ghostline.exe --publish` publishes by hand.
+- **Live comes from your PC.** The online copy's Live page streams from Ghostline through the tunnel on a second
+  hostname whenever it runs, and says you're not driving when it doesn't. That hostname serves nothing but the
+  stream; everything else is sent on to the site.
+- The References page shows when the online copy was last published, or why it failed.
+
 ## 2.3.0
 
 A full dash inside the game, so Ghostline is the only app you need.

@@ -9,6 +9,7 @@ ac_app/RaceLogger/logs/
 CLAUDE.md
 .venv/
 config/site.json
+config/cloudflare.json
 cloudflared/*.yml
 !cloudflared/*.example.yml
 ai_slop_to_avoid.md
