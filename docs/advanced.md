@@ -222,7 +222,7 @@ What's in the copy: every page and number the public site shows (other drivers a
 three closest references and your ideal lap, and the best lap of each car and track against every ghost. Ghostline
 on your PC still compares any two laps.
 
-You need [Node.js](https://nodejs.org) (publishing uses Cloudflare's own upload tool, `wrangler`, pinned in
+You need [Node.js](https://nodejs.org) 22 or newer (publishing uses Cloudflare's own upload tool, `wrangler`, pinned in
 `backend/publish.py`) and the tunnel from the section above.
 
 1. In the Cloudflare dashboard, create an API token with **Account > Cloudflare Pages > Edit** (Profile > API

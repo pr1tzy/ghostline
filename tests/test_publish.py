@@ -128,9 +128,15 @@ assert TestClient(web.app, base_url="https://evil.example").get("/api/state").st
 
 # publishing: not without an account and token; once it has published, only again after something changes
 assert not publish.configured()
+assert [publish.node_major(v) for v in ("v20.17.0", "v22.11.0\n", "", "x")] == [20, 22, 0, 0]
 calls = []
 publish.deploy = lambda out=None, log=None: calls.append(1)
+publish.tools_problem = lambda: "Node.js 22 or newer is needed to publish; this PC has v20.17.0"
 p = publish.Publisher(lambda: False, lambda: False)
+assert not p.publish("test") and not calls and "Node.js 22" in publish.STATUS["detail"], "checked before building"
+publish.tools_problem = lambda: None
+with publish._OneAtATime():   # `Ghostline.exe --publish` while the app is publishing: one waits its turn
+    assert not p.publish("test") and "another publish" in publish.STATUS["detail"] and not calls
 assert p.due() and p.publish("test") and len(calls) == 1
 assert not p.due() and p.publish("again") and len(calls) == 1, "nothing changed: no upload"
 store.q("UPDATE laps SET note=? WHERE id=?", ('{"tyres": "softs"}', laps[0]["id"]))

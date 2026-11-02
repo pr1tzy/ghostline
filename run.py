@@ -105,6 +105,14 @@ def already_running():
         return sk.connect_ex(("127.0.0.1", PORT)) == 0
 
 
+def say(text, error=False):
+    """Print, and show it in a window when there's no console to print to (the installed app)."""
+    print(text)
+    if settings.FROZEN and os.name == "nt":
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, text, "Ghostline", 0x10 if error else 0x40)
+
+
 def one_shot_commands():
     """Installer / uninstaller helpers: do one thing and exit."""
     if "--set" in ARGS:
@@ -117,9 +125,13 @@ def one_shot_commands():
         sys.exit(0)
     if "--publish" in ARGS:
         if not publish.configured():
-            print("Publishing isn't set up: see docs/advanced.md, Always online")
+            say("Publishing isn't set up: see docs/advanced.md, Always online", error=True)
             sys.exit(1)
-        sys.exit(0 if publish.Publisher(lambda: False, lambda: False).publish("by hand", force=True) else 1)
+        ok = publish.Publisher(lambda: False, lambda: False).publish("by hand", force=True)
+        st = publish.STATUS
+        say(f"Published: https://{settings.PUBLIC_HOST}" + (f" ({st['url']})" if st.get("url") else "") if ok
+            else f"Publishing failed: {st.get('detail') or 'see the log'}", error=not ok)
+        sys.exit(0 if ok else 1)
 
 
 def selftest(server):

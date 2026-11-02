@@ -241,6 +241,60 @@ def _pages(out, web):
 
 # ---------- upload ----------
 
+NODE_MIN = 22   # wrangler 4 needs Node.js 22 or newer
+
+
+def node_major(text):
+    m = re.match(r"v?(\d+)\.", (text or "").strip())
+    return int(m.group(1)) if m else 0
+
+
+def tools_problem():
+    """Why an upload can't work on this PC (checked before spending a minute on the build), or None."""
+    node = shutil.which("node")
+    if not node or not (shutil.which("npx") or shutil.which("npx.cmd")):
+        return f"Node.js {NODE_MIN} or newer is needed to publish (nodejs.org): it runs Cloudflare's upload tool"
+    flags = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
+    try:
+        v = subprocess.run([node, "--version"], capture_output=True, text=True, timeout=20, **flags).stdout
+    except (OSError, subprocess.SubprocessError):
+        v = ""
+    if node_major(v) < NODE_MIN:
+        return f"Node.js {NODE_MIN} or newer is needed to publish; this PC has {v.strip() or 'an unknown version'} (nodejs.org)"
+    return None
+
+
+class Busy(Exception):
+    pass
+
+
+class _OneAtATime:
+    """Across processes too: the tray app and `Ghostline.exe --publish` build into the same folder."""
+    STALE = 3600
+
+    def __init__(self):
+        self.path = settings.DATA_DIR / "publish.lock"
+
+    def __enter__(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        for _ in range(2):
+            try:
+                fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(fd, str(os.getpid()).encode())
+                os.close(fd)
+                return self
+            except FileExistsError:
+                try:
+                    if time.time() - self.path.stat().st_mtime < self.STALE:
+                        raise Busy("another publish is running") from None
+                    self.path.unlink()   # left behind by a publish that was killed
+                except FileNotFoundError:
+                    pass
+        raise Busy("another publish is running")
+
+    def __exit__(self, *exc):
+        self.path.unlink(missing_ok=True)
+
 def deploy(out=OUT, log=print):
     """Upload the built copy with wrangler (Cloudflare's tool; needs Node.js). Only changed files are sent."""
     npx = shutil.which("npx") or shutil.which("npx.cmd")
@@ -265,6 +319,7 @@ def deploy(out=OUT, log=print):
     if code != 0:
         raise RuntimeError("upload failed: " + " ".join(text.split())[-400:])
     url = re.search(r"https://\S+\.pages\.dev", text)
+    STATUS["url"] = url.group(0) if url else STATUS.get("url")   # the project's own *.pages.dev address
     log(f"publish: online at https://{settings.PUBLIC_HOST}" + (f" ({url.group(0)})" if url else ""))
 
 
@@ -297,11 +352,17 @@ class Publisher(threading.Thread):
             sig = signature()
             if sig == store.kv_get("published_sig") and not force:
                 return True
+            problem = tools_problem()
+            if problem:
+                STATUS.update(state="error", at=time.time(), detail=problem)
+                print("publish:", problem)
+                return False
             STATUS.update(state="publishing", detail=why)
             print(f"publish: building the online copy ({why})")
             try:
-                build()
-                deploy()
+                with _OneAtATime():
+                    build()
+                    deploy()
                 store.kv_set("published_sig", sig)
                 STATUS.update(state="ok", at=time.time(), detail="")
                 return True

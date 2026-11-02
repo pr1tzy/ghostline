@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.4.1
+
+- **Publishing says what's wrong up front.** Cloudflare's upload tool needs Node.js 22 or newer; Ghostline now
+  checks before spending a minute on the build, and the References page says so.
+- `Ghostline.exe --publish` shows the result in a window (the installed app has no console), and never runs at the
+  same time as the app's own publish.
+
 ## 2.4.0
 
 The public site stays up with your PC off.
