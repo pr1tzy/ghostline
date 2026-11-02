@@ -96,7 +96,8 @@ def start_tunnel():
     p = subprocess.Popen([exe, "tunnel", "--no-autoupdate", "--config", str(settings.TUNNEL_CFG), "run", settings.TUNNEL],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
     atexit.register(p.terminate)
-    return f"starting (https://{settings.PUBLIC_HOST})" if settings.PUBLIC_HOST else "starting"
+    host = settings.LIVE_HOST or settings.PUBLIC_HOST   # with an online copy, the tunnel only carries Live
+    return f"starting (https://{host})" if host else "starting"
 
 
 def already_running():
