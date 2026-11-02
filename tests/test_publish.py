@@ -86,7 +86,7 @@ if node:
     js.write_text(r"""
 const fs = require('fs'), path = require('path');
 const [, , appjs, site, casesFile] = process.argv;
-const block = fs.readFileSync(appjs, 'utf8').split('// ---- online copy: start')[1].split('// ---- online copy: end')[0].replace(/^.*\n/, '');
+const block = fs.readFileSync(appjs, 'utf8').split('// ---- online copy: start')[1].split('// ---- online copy: end')[0].replace(/^[^\n]*\n/, '');   // the rest of the marker line (CRLF in a Windows checkout)
 globalThis.document = { querySelector: () => ({ content: 'ghostline-live.example.com' }) };
 globalThis.fetch = async u => {
   const f = path.join(site, u.split('?')[0]), ok = fs.existsSync(f);
