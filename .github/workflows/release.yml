@@ -45,12 +45,12 @@ jobs:
       # ---- signing the app (before it goes into the installer) ----
       - id: app_unsigned
         if: env.SIGNING == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app-unsigned
           path: dist/Ghostline
       - if: env.SIGNING == 'true'
-        uses: signpath/github-action-submit-signing-request@ced31329c0317e779dad2eec2a7c3bb46ea1343e  # v1.3
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092  # v3.0
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
@@ -67,12 +67,12 @@ jobs:
       # ---- signing the installer ----
       - id: setup_unsigned
         if: env.SIGNING == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: setup-unsigned
           path: dist/release/GhostlineSetup.exe
       - if: env.SIGNING == 'true'
-        uses: signpath/github-action-submit-signing-request@ced31329c0317e779dad2eec2a7c3bb46ea1343e  # v1.3
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092  # v3.0
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
@@ -91,7 +91,7 @@ jobs:
           cat dist/release/SHA256SUMS.txt
 
       - name: Build provenance (proves the files were built from this repository)
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             dist/release/GhostlineSetup.exe
@@ -106,14 +106,14 @@ jobs:
 
       - name: Keep the build (manual runs)
         if: github.event_name != 'release'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ghostline-build
           path: dist/release
 
       - name: VirusTotal scan link in the release notes
         if: github.event_name == 'release' && env.VIRUSTOTAL == 'true'
-        uses: crazy-max/ghaction-virustotal@d34968c958ae283fe976efed637081b9f9dcf74f  # v4.2.0
+        uses: crazy-max/ghaction-virustotal@936d8c5c00afe97d3d9a1af26d017cfdf26800a2  # v5.0.0
         with:
           vt_api_key: ${{ secrets.VT_API_KEY }}
           files: GhostlineSetup.exe   # on a release this matches the release's file names, not local paths
