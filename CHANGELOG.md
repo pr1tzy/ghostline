@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.4.2
+
+Security updates.
+
+- **Pillow 13.0.0** (from 12.3.0): fixes 39 published advisories, two of them Critical, and a heap overflow in the
+  bundled OpenJPEG. Ghostline only draws its own share images with it and never opens images it didn't make, but
+  the update closes them all.
+- **Starlette 1.10.0, FastAPI 0.162.0, Pydantic 2.14.2, NumPy 2.5.4.** These include fixes for Starlette's static
+  files on Windows and several moderate Pydantic advisories.
+
 ## 2.4.1
 
 - **Publishing says what's wrong up front.** Cloudflare's upload tool needs Node.js 22 or newer; Ghostline now

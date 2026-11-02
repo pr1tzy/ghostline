@@ -32,7 +32,7 @@ def _slant(img, box_text, font, fill, pos):
     w, h = int(font.getlength(box_text)) + 60, font.size + 40
     layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     ImageDraw.Draw(layer).text((20, 10), box_text, font=font, fill=fill)
-    layer = layer.transform(layer.size, Image.AFFINE, (1, 0.2, -0.2 * h, 0, 1, 0), resample=Image.BICUBIC)
+    layer = layer.transform(layer.size, Image.Transform.AFFINE, (1, 0.2, -0.2 * h, 0, 1, 0), resample=Image.Resampling.BICUBIC)
     img.alpha_composite(layer, pos)
 
 

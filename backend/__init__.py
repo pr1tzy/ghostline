@@ -1,2 +1,2 @@
 """Ghostline: sim racing telemetry lab for Assetto Corsa."""
-__version__ = "2.4.1"
+__version__ = "2.4.2"
